@@ -860,13 +860,18 @@ with tab_goedkeuring:
                                     st.session_state[state_key][row_idx] = (new_status, new_note)
                                     st.markdown("<hr style='margin:8px 0;border:none;border-top:1px solid #eee;'>", unsafe_allow_html=True)
 
-                        # Opslaan per klant
+                        # Knoppen per klant
                         client_row_indices = {row_idx for row_idx, _ in rows}
-                        client_updates = {
+                        client_updates     = {
                             k: v for k, v in st.session_state.get(state_key, {}).items()
                             if k in client_row_indices
                         }
-                        col_save_c, col_status_c = st.columns([2, 6])
+                        client_posts       = [p for _, p in rows]
+                        n_rej_client       = sum(1 for p in client_posts if p.get("status") == "afgewezen")
+                        n_app_client       = sum(1 for p in client_posts if p.get("status") == "goedgekeurd")
+
+                        col_save_c, col_regen_c, col_export_c, col_status_c = st.columns([2, 2, 2, 4])
+
                         with col_save_c:
                             if st.button(
                                 "💾 Opslaan",
@@ -878,9 +883,56 @@ with tab_goedkeuring:
                                     with st.spinner("Opslaan..."):
                                         save_statuses(spreadsheet_id, selected_tab, client_updates, sa_json)
                                         load_posts_from_tab.clear()
-                                    st.success(f"✓ {len(client_updates)} posts opgeslagen voor {bedrijfsnaam}")
+                                    st.success(f"✓ {len(client_updates)} posts opgeslagen")
                                 else:
                                     st.info("Geen wijzigingen.")
+
+                        with col_regen_c:
+                            if st.button(
+                                f"🔄 Regenereer ({n_rej_client})",
+                                key=f"regen_{bedrijfsnaam}",
+                                disabled=n_rej_client == 0,
+                                use_container_width=True,
+                            ):
+                                api_key = os.getenv("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY", "")
+                                if not api_key:
+                                    st.error("ANTHROPIC_API_KEY ontbreekt in secrets.")
+                                else:
+                                    if client_updates:
+                                        save_statuses(spreadsheet_id, selected_tab, client_updates, sa_json)
+                                    fresh_posts   = load_posts_from_tab(spreadsheet_id, selected_tab, sa_json)
+                                    load_posts_from_tab.clear()
+                                    client_only   = [p for p in fresh_posts if p.get("bedrijfsnaam") == bedrijfsnaam]
+                                    client_dict   = load_client_dict(spreadsheet_id, sa_json)
+                                    with st.spinner(f"{n_rej_client} posts regenereren..."):
+                                        count = regenerate_rejected(
+                                            client_only, client_dict, api_key,
+                                            spreadsheet_id, selected_tab, sa_json,
+                                        )
+                                        load_posts_from_tab.clear()
+                                        st.session_state.pop(state_key, None)
+                                    st.success(f"✓ {count} posts herschreven → concept")
+
+                        with col_export_c:
+                            if n_app_client == 0:
+                                st.button(
+                                    "📄 Download",
+                                    key=f"dl_{bedrijfsnaam}",
+                                    disabled=True,
+                                    use_container_width=True,
+                                )
+                            else:
+                                docx_bytes = _build_approved_docx(bedrijfsnaam, client_posts)
+                                week_label = selected_tab.replace("Posts_", "").replace("_W", "_Week")
+                                st.download_button(
+                                    label=f"📄 Download ({n_app_client})",
+                                    data=docx_bytes,
+                                    file_name=f"{bedrijfsnaam} - Definitief {week_label}.docx",
+                                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                    key=f"dl_btn_{bedrijfsnaam}",
+                                    use_container_width=True,
+                                )
+
                         with col_status_c:
                             if pct == 100:
                                 st.markdown(
