@@ -34,10 +34,22 @@ st.set_page_config(
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-PLATFORM_ICONS = {
-    "instagram": "📸",
-    "linkedin":  "💼",
-    "facebook":  "👥",
+PLATFORM_COLORS = {
+    "instagram": "#E1306C",
+    "linkedin":  "#0077B5",
+    "facebook":  "#1877F2",
+}
+
+PLATFORM_ICON_HTML = {
+    "instagram": '<img src="https://cdn.simpleicons.org/instagram/E1306C" width="16" height="16" style="vertical-align:middle;margin-right:6px;">',
+    "linkedin":  '<img src="https://cdn.simpleicons.org/linkedin/0077B5" width="16" height="16" style="vertical-align:middle;margin-right:6px;">',
+    "facebook":  '<img src="https://cdn.simpleicons.org/facebook/1877F2" width="16" height="16" style="vertical-align:middle;margin-right:6px;">',
+}
+
+PLATFORM_LABELS = {
+    "instagram": "Instagram",
+    "linkedin":  "LinkedIn",
+    "facebook":  "Facebook",
 }
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
@@ -116,13 +128,28 @@ def load_clients() -> list[dict]:
     return active
 
 
-def _platform_summary(client: dict) -> str:
+def _platform_summary_text(client: dict) -> str:
     parts = []
-    for platform in ("instagram", "linkedin", "facebook"):
+    for platform, label in PLATFORM_LABELS.items():
         count = client.get(f"{platform}_posts_pw", 0)
         if count:
-            parts.append(f"{PLATFORM_ICONS[platform]} {count}x")
-    return "  ".join(parts) if parts else "—"
+            parts.append(f"{label} {count}x")
+    return "  ·  ".join(parts) if parts else "—"
+
+
+def _platform_summary_html(client: dict) -> str:
+    parts = []
+    for platform, label in PLATFORM_LABELS.items():
+        count = client.get(f"{platform}_posts_pw", 0)
+        if count:
+            icon = PLATFORM_ICON_HTML[platform]
+            color = PLATFORM_COLORS[platform]
+            parts.append(
+                f'<span style="margin-right:16px;">{icon}'
+                f'<span style="color:{color};font-weight:600;">{label}</span>'
+                f' <span style="color:#666;">{count}x/week</span></span>'
+            )
+    return "".join(parts) if parts else "—"
 
 
 def _total_posts_pw(client: dict) -> int:
@@ -175,18 +202,17 @@ else:
 
     # Tabel
     for client in clients:
+        total = _total_posts_pw(client)
         with st.expander(
-            f"**{client['bedrijfsnaam']}**  ·  {_platform_summary(client)}  ·  {_total_posts_pw(client)} posts/week",
+            f"{client['bedrijfsnaam']}  ·  {_platform_summary_text(client)}  ·  {total} posts/week",
             expanded=False,
         ):
             col_a, col_b = st.columns(2)
 
             with col_a:
                 st.markdown("**Platformen**")
-                for platform in ("instagram", "linkedin", "facebook"):
-                    count = client.get(f"{platform}_posts_pw", 0)
-                    if count:
-                        st.write(f"{PLATFORM_ICONS[platform]} {platform.capitalize()}: {count}x per week")
+                st.markdown(_platform_summary_html(client), unsafe_allow_html=True)
+                st.write("")
 
                 st.markdown("**Toon**")
                 st.write(client.get("toon") or "_Niet ingevuld_")
