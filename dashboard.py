@@ -64,16 +64,34 @@ def _format_countdown(delta: timedelta) -> str:
 
 @st.cache_data(ttl=300)  # Cache 5 minuten
 def load_clients() -> list[dict]:
-    service_account_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON") or st.secrets.get("GOOGLE_SERVICE_ACCOUNT_JSON")
-    spreadsheet_id       = os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID") or st.secrets.get("GOOGLE_SHEETS_SPREADSHEET_ID")
-
-    if not service_account_json or not spreadsheet_id:
+    # Lees spreadsheet ID
+    spreadsheet_id = os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID") or st.secrets.get("GOOGLE_SHEETS_SPREADSHEET_ID")
+    if not spreadsheet_id:
+        st.error("GOOGLE_SHEETS_SPREADSHEET_ID ontbreekt in secrets.")
         return []
 
-    creds  = Credentials.from_service_account_info(json.loads(service_account_json), scopes=SCOPES)
-    client = gspread.authorize(creds)
-    sheet  = client.open_by_key(spreadsheet_id).sheet1
-    rows   = sheet.get_all_records(default_blank="")
+    # Lees service account — eerst als JSON-string, dan als TOML-sectie
+    try:
+        sa_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON") or st.secrets.get("GOOGLE_SERVICE_ACCOUNT_JSON")
+        if sa_json:
+            sa_info = json.loads(sa_json)
+        elif "gcp_service_account" in st.secrets:
+            sa_info = dict(st.secrets["gcp_service_account"])
+        else:
+            st.error("Google service account credentials ontbreken in secrets.")
+            return []
+    except Exception as e:
+        st.error(f"Fout bij laden service account: {e}")
+        return []
+
+    try:
+        creds  = Credentials.from_service_account_info(sa_info, scopes=SCOPES)
+        client = gspread.authorize(creds)
+        sheet  = client.open_by_key(spreadsheet_id).sheet1
+        rows   = sheet.get_all_records(default_blank="")
+    except Exception as e:
+        st.error(f"Fout bij verbinden met Google Sheets: {e}")
+        return []
 
     active = []
     for row in rows:
