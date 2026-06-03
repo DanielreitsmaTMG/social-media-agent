@@ -13,10 +13,12 @@ Vereist in .env (of Streamlit Cloud secrets):
 """
 
 import base64
+import io
 import json
 import os
 import re
-from datetime import datetime, timedelta
+import zipfile
+from datetime import datetime, date, timedelta
 from urllib.parse import urlparse
 
 import gspread
@@ -498,6 +500,160 @@ def save_statuses(spreadsheet_id: str, tab_name: str, updates: dict, sa_info_jso
     worksheet.batch_update(batch, value_input_option="RAW")
 
 
+MONTHS_NL_LONG = [
+    "januari", "februari", "maart", "april", "mei", "juni",
+    "juli", "augustus", "september", "oktober", "november", "december",
+]
+
+PLATFORM_LABELS_EXPORT = {"instagram": "Instagram", "linkedin": "LinkedIn", "facebook": "Facebook"}
+PLATFORM_COLORS_EXPORT  = {"instagram": (0xE1, 0x30, 0x6C), "linkedin": (0x00, 0x77, 0xB5), "facebook": (0x18, 0x77, 0xF2)}
+
+
+@st.cache_data(ttl=300)
+def load_client_dict(spreadsheet_id: str, sa_info_json: str) -> dict:
+    """Laadt klantprofielen als dict keyed by bedrijfsnaam."""
+    clients = load_clients()
+    return {c["bedrijfsnaam"]: c for c in clients}
+
+
+def _regenerate_prompt(post: dict, client: dict) -> str:
+    opmerking = post.get("opmerkingen", "").strip()
+    return f"""De volgende social media post voor {client.get('bedrijfsnaam','')} werd afgewezen.
+
+Originele post:
+Platform: {post.get('platform','')}
+Dag: {post.get('dag','')} ({post.get('publicatiedatum','')})
+Tekst: {post.get('caption','')}
+Hashtags: {post.get('hashtags','')}
+
+Reden van afwijzing: {opmerking or 'Geen reden opgegeven — verbeter de kwaliteit en relevantie.'}
+
+Klantprofiel:
+- Toon: {client.get('toon','')}
+- Doelgroep: {client.get('doelgroep','')}
+- Kernthema's: {client.get('kernthemas','')}
+- Vaste hashtags: {client.get('vaste_hashtags','')}
+- Vermijd: {client.get('vermijd','')}
+
+Schrijf een nieuwe, verbeterde versie die de feedback adresseert.
+Regels: geen koppeltekens (-) in de tekst. CTA linkt naar een relevante pagina op {client.get('website_url','de website')}.
+
+Geef alleen valide JSON terug:
+{{"caption": "...", "hashtags": "..."}}"""
+
+
+def regenerate_rejected(posts: list[dict], client_dict: dict, api_key: str,
+                        spreadsheet_id: str, tab_name: str, sa_info_json: str) -> int:
+    """Regenereert alle afgewezen posts via Claude API en schrijft ze terug naar de sheet."""
+    import anthropic
+
+    rejected = [(i + 2, p) for i, p in enumerate(posts) if p.get("status") == "afgewezen"]
+    if not rejected:
+        return 0
+
+    ac = anthropic.Anthropic(api_key=api_key)
+    sa_info = json.loads(sa_info_json)
+    gc = _get_write_client(sa_info)
+    worksheet = gc.open_by_key(spreadsheet_id).worksheet(tab_name)
+
+    updates = []
+    for row_idx, post in rejected:
+        client = client_dict.get(post.get("bedrijfsnaam", ""), {})
+        prompt = _regenerate_prompt(post, client)
+
+        msg = ac.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=1024,
+            system="Je bent een professionele social media contentschrijver. Retourneer uitsluitend valide JSON.",
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = msg.content[0].text.strip().strip("```json").strip("```").strip()
+        new_post = json.loads(raw)
+
+        updates.append({
+            "range": f"F{row_idx}:H{row_idx}",
+            "values": [[new_post.get("caption", ""), new_post.get("hashtags", ""), "concept"]],
+        })
+
+    if updates:
+        worksheet.batch_update(updates, value_input_option="RAW")
+
+    return len(rejected)
+
+
+def _build_approved_docx(bedrijfsnaam: str, approved_posts: list[dict]) -> bytes:
+    """Bouwt een Word-document met alleen de goedgekeurde posts."""
+    from docx import Document
+    from docx.shared import Pt, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    doc = Document()
+    for section in doc.sections:
+        section.top_margin    = Pt(50)
+        section.bottom_margin = Pt(50)
+        section.left_margin   = Pt(70)
+        section.right_margin  = Pt(70)
+
+    title = doc.add_heading(f"{bedrijfsnaam} — Definitieve Social Media Posts", level=1)
+    title.alignment = WD_ALIGN_PARAGRAPH.LEFT
+
+    sub = doc.add_paragraph(f"Gegenereerd op {datetime.now().strftime('%d-%m-%Y %H:%M')} · Alleen goedgekeurde posts")
+    sub.runs[0].font.color.rgb = RGBColor(0x88, 0x88, 0x88)
+    sub.runs[0].font.size = Pt(10)
+    doc.add_paragraph()
+
+    for platform in ("instagram", "linkedin", "facebook"):
+        platform_posts = [p for p in approved_posts if p.get("platform") == platform]
+        if not platform_posts:
+            continue
+
+        label = PLATFORM_LABELS_EXPORT[platform]
+        r, g, b = PLATFORM_COLORS_EXPORT[platform]
+        color = RGBColor(r, g, b)
+
+        heading = doc.add_heading(f"{label} — {len(platform_posts)} post{'s' if len(platform_posts) > 1 else ''}", level=2)
+        for run in heading.runs:
+            run.font.color.rgb = color
+
+        for post in platform_posts:
+            dag_p = doc.add_paragraph()
+            dag_run = dag_p.add_run(f"📅 {post.get('dag','')} — {post.get('publicatiedatum','')}")
+            dag_run.bold = True
+            dag_run.font.size = Pt(11)
+
+            doc.add_paragraph(post.get("caption", ""))
+
+            ht_p = doc.add_paragraph()
+            ht_run = ht_p.add_run(post.get("hashtags", ""))
+            ht_run.font.color.rgb = color
+            ht_run.font.size = Pt(10)
+            doc.add_paragraph()
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+def build_export_zip(posts: list[dict], tab_name: str) -> bytes:
+    """Genereert een zip met één Word-document per klant (alleen goedgekeurde posts)."""
+    clients_posts: dict[str, list[dict]] = {}
+    for post in posts:
+        if post.get("status") != "goedgekeurd":
+            continue
+        name = post.get("bedrijfsnaam", "Onbekend")
+        clients_posts.setdefault(name, []).append(post)
+
+    week_label = tab_name.replace("Posts_", "").replace("_W", "_Week")
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name, client_posts in clients_posts.items():
+            docx_bytes = _build_approved_docx(name, client_posts)
+            filename = f"{name} - Definitief {week_label}.docx"
+            zf.writestr(filename, docx_bytes)
+    return buf.getvalue()
+
+
 def _sa_info_json() -> str | None:
     b64 = os.getenv("GOOGLE_SERVICE_ACCOUNT_B64") or st.secrets.get("GOOGLE_SERVICE_ACCOUNT_B64")
     if not b64:
@@ -704,18 +860,71 @@ with tab_goedkeuring:
                                     st.session_state[state_key][row_idx] = (new_status, new_note)
                                     st.markdown("<hr style='margin:8px 0;border:none;border-top:1px solid #eee;'>", unsafe_allow_html=True)
 
-                # Opslaan knop
+                # Actieknoppen
                 st.divider()
-                col_btn, col_info = st.columns([2, 8])
-                with col_btn:
+                n_rejected  = sum(1 for p in posts if p.get("status") == "afgewezen")
+                n_approved  = sum(1 for p in posts if p.get("status") == "goedgekeurd")
+
+                col_save, col_regen, col_export = st.columns([3, 3, 3])
+
+                with col_save:
                     if st.button("💾 Wijzigingen opslaan", type="primary", use_container_width=True):
                         updates = st.session_state.get(state_key, {})
                         if updates:
                             with st.spinner("Opslaan..."):
                                 save_statuses(spreadsheet_id, selected_tab, updates, sa_json)
                                 load_posts_from_tab.clear()
-                            st.success(f"{len(updates)} posts opgeslagen in Google Sheets.")
+                            st.success(f"{len(updates)} posts opgeslagen.")
                         else:
-                            st.info("Geen wijzigingen om op te slaan.")
-                with col_info:
-                    st.caption("Wijzigingen worden direct opgeslagen in het Google Sheets-tabblad.")
+                            st.info("Geen wijzigingen.")
+
+                with col_regen:
+                    regen_disabled = n_rejected == 0
+                    if st.button(
+                        f"🔄 Regenereer afgewezen ({n_rejected})",
+                        disabled=regen_disabled,
+                        use_container_width=True,
+                        help="Herschrijft alle afgewezen posts op basis van de opmerking",
+                    ):
+                        api_key = os.getenv("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY", "")
+                        if not api_key:
+                            st.error("ANTHROPIC_API_KEY ontbreekt in secrets.")
+                        else:
+                            # Sla eerst huidige wijzigingen op
+                            updates = st.session_state.get(state_key, {})
+                            if updates:
+                                save_statuses(spreadsheet_id, selected_tab, updates, sa_json)
+                            fresh_posts = load_posts_from_tab(spreadsheet_id, selected_tab, sa_json)
+                            load_posts_from_tab.clear()
+                            client_dict = load_client_dict(spreadsheet_id, sa_json)
+                            with st.spinner(f"{n_rejected} posts regenereren via Claude..."):
+                                count = regenerate_rejected(
+                                    fresh_posts, client_dict, api_key,
+                                    spreadsheet_id, selected_tab, sa_json,
+                                )
+                                load_posts_from_tab.clear()
+                                st.session_state.pop(state_key, None)
+                            st.success(f"{count} posts herschreven en teruggezet naar 'concept'. Ververs de pagina om ze te zien.")
+
+                with col_export:
+                    export_disabled = n_approved == 0
+                    if export_disabled:
+                        st.button(
+                            f"📄 Download definitief ({n_approved})",
+                            disabled=True,
+                            use_container_width=True,
+                            help="Goedkeur eerst posts om te kunnen exporteren",
+                        )
+                    else:
+                        with st.spinner("Documenten genereren..."):
+                            zip_bytes = build_export_zip(posts, selected_tab)
+                        week_label = selected_tab.replace("Posts_", "").replace("_W", "_Week")
+                        st.download_button(
+                            label=f"📄 Download definitief ({n_approved} posts)",
+                            data=zip_bytes,
+                            file_name=f"Definitief_{week_label}.zip",
+                            mime="application/zip",
+                            use_container_width=True,
+                        )
+
+                st.caption("Opslaan → wijzigingen naar sheet · Regenereer → Claude herschrijft afgewezen posts · Download → zip met goedgekeurde Word-bestanden")
