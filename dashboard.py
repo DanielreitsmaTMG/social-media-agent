@@ -618,40 +618,115 @@ with tab_goedkeuring:
             if not posts:
                 st.warning("Geen posts gevonden in dit tabblad.")
             else:
-                # Voortgangsoverzicht
-                total   = len(posts)
-                approved = sum(1 for p in posts if p.get("status") == "goedgekeurd")
-                rejected = sum(1 for p in posts if p.get("status") == "afgewezen")
-                pending  = total - approved - rejected
-
-                c1, c2, c3, c4 = st.columns(4)
-                c1.metric("Totaal posts", total)
-                c2.metric("✅ Goedgekeurd", approved)
-                c3.metric("❌ Afgewezen", rejected)
-                c4.metric("⏳ Concept", pending)
-
-                st.divider()
-
-                # Groepeer per klant
+                # Groepeer per klant (eerst, zodat we voortgang kunnen berekenen)
                 clients_in_week = {}
-                for i, post in enumerate(posts, start=2):  # rij 2 = eerste datarij
+                for i, post in enumerate(posts, start=2):
                     name = post.get("bedrijfsnaam", "Onbekend")
                     if name not in clients_in_week:
                         clients_in_week[name] = []
                     clients_in_week[name].append((i, post))
+
+                def _client_progress(rows):
+                    """Geeft (percentage, label, kleur) terug op basis van de statussen."""
+                    statuses = [r[1].get("status", "concept") for r in rows]
+                    total    = len(statuses)
+                    approved = sum(1 for s in statuses if s == "goedgekeurd")
+                    reviewed = sum(1 for s in statuses if s != "concept")
+                    if approved == total:
+                        return 100, "Klaar", "#22c55e"
+                    elif reviewed > 0:
+                        return 66, "In review", "#f59e0b"
+                    else:
+                        return 33, "Niet gestart", "#ef4444"
+
+                # Urgentie-banner op donderdag en vrijdag
+                now = datetime.now()
+                weekday = now.weekday()  # 0=ma, 3=do, 4=vr, 6=zo
+                days_until_monday = (7 - weekday) % 7 or 7
+                is_urgent = weekday in (3, 4)  # donderdag of vrijdag
+
+                incomplete = [
+                    name for name, rows in clients_in_week.items()
+                    if _client_progress(rows)[0] < 100
+                ]
+
+                if is_urgent and incomplete:
+                    urgency_color = "#ef4444" if weekday == 4 else "#f59e0b"
+                    dag_label = "vrijdag" if weekday == 4 else "donderdag"
+                    st.markdown(
+                        f'<div style="background:{urgency_color}18;border:1.5px solid {urgency_color};'
+                        f'border-radius:10px;padding:12px 16px;margin-bottom:16px;">'
+                        f'<span style="font-weight:700;color:{urgency_color};">⚠️ Het is {dag_label} — '
+                        f'{len(incomplete)} klant{"en" if len(incomplete) > 1 else ""} '
+                        f'nog niet volledig goedgekeurd voor maandag.</span></div>',
+                        unsafe_allow_html=True,
+                    )
+
+                # Totaaloverzicht bovenaan
+                total_posts  = len(posts)
+                approved_all = sum(1 for p in posts if p.get("status") == "goedgekeurd")
+                rejected_all = sum(1 for p in posts if p.get("status") == "afgewezen")
+                pending_all  = total_posts - approved_all - rejected_all
+                done_clients = sum(1 for name, rows in clients_in_week.items()
+                                   if _client_progress(rows)[0] == 100)
+                total_clients = len(clients_in_week)
+
+                c1, c2, c3, c4, c5 = st.columns(5)
+                c1.metric("Klanten klaar", f"{done_clients}/{total_clients}")
+                c2.metric("Posts totaal", total_posts)
+                c3.metric("✅ Goedgekeurd", approved_all)
+                c4.metric("❌ Afgewezen", rejected_all)
+                c5.metric("⏳ Concept", pending_all)
+
+                # Globale voortgangsbalk
+                overall_pct = int(approved_all / total_posts * 100) if total_posts else 0
+                st.markdown(
+                    f'<div style="background:#e5e7eb;border-radius:99px;height:8px;margin:8px 0 16px 0;">'
+                    f'<div style="background:#22c55e;width:{overall_pct}%;height:8px;border-radius:99px;'
+                    f'transition:width .3s;"></div></div>'
+                    f'<p style="font-size:12px;color:#666;margin-top:-8px;">{overall_pct}% van alle posts goedgekeurd</p>',
+                    unsafe_allow_html=True,
+                )
+
+                st.divider()
 
                 # Session state voor wijzigingen
                 state_key = f"updates_{selected_tab}"
                 if state_key not in st.session_state:
                     st.session_state[state_key] = {}
 
-                for bedrijfsnaam, rows in clients_in_week.items():
-                    statuses = [r[1].get("status", "concept") for r in rows]
-                    all_ok   = all(s == "goedgekeurd" for s in statuses)
-                    any_rej  = any(s == "afgewezen" for s in statuses)
-                    badge    = "✅" if all_ok else ("❌" if any_rej else "⏳")
+                # Sorteer: onvolledig eerst, dan op naam
+                sorted_clients = sorted(
+                    clients_in_week.items(),
+                    key=lambda x: (_client_progress(x[1])[0], x[0])
+                )
 
-                    with st.expander(f"{badge} {bedrijfsnaam} — {len(rows)} posts", expanded=not all_ok):
+                for bedrijfsnaam, rows in sorted_clients:
+                    pct, pct_label, pct_color = _client_progress(rows)
+                    n_approved = sum(1 for _, p in rows if p.get("status") == "goedgekeurd")
+                    n_total    = len(rows)
+                    urgent_dot = "🔴 " if is_urgent and pct < 100 else ""
+
+                    # Voortgangsbadge in de expander-titel
+                    expander_label = (
+                        f"{urgent_dot}{bedrijfsnaam}  ·  "
+                        f"{pct}% — {pct_label}  ·  "
+                        f"{n_approved}/{n_total} goedgekeurd"
+                    )
+
+                    with st.expander(expander_label, expanded=(is_urgent and pct < 100)):
+                        # Voortgangsbalk per klant
+                        st.markdown(
+                            f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">'
+                            f'<div style="flex:1;background:#e5e7eb;border-radius:99px;height:6px;">'
+                            f'<div style="background:{pct_color};width:{pct}%;height:6px;border-radius:99px;"></div>'
+                            f'</div>'
+                            f'<span style="font-size:13px;font-weight:700;color:{pct_color};white-space:nowrap;">'
+                            f'{pct}% &nbsp;{pct_label}</span>'
+                            f'</div>',
+                            unsafe_allow_html=True,
+                        )
+
                         for platform in ("instagram", "linkedin", "facebook"):
                             platform_rows = [(i, p) for i, p in rows if p.get("platform") == platform]
                             if not platform_rows:
