@@ -542,43 +542,59 @@ Geef alleen valide JSON terug:
 {{"caption": "...", "hashtags": "..."}}"""
 
 
-def regenerate_rejected(posts: list[dict], client_dict: dict, api_key: str,
-                        spreadsheet_id: str, tab_name: str, sa_info_json: str) -> int:
-    """Regenereert alle afgewezen posts via Claude API en schrijft ze terug naar de sheet."""
+def regenerate_rejected(all_posts: list[dict], client_dict: dict, api_key: str,
+                        spreadsheet_id: str, tab_name: str, sa_info_json: str,
+                        filter_bedrijfsnaam: str | None = None) -> tuple[int, str]:
+    """
+    Regenereert afgewezen posts via Claude API en schrijft ze terug naar de sheet.
+    Geeft (aantal_verwerkt, foutmelding) terug.
+    Rij-indices worden berekend op de volledige lijst zodat sheet-nummers kloppen.
+    """
     import anthropic
 
-    rejected = [(i + 2, p) for i, p in enumerate(posts) if p.get("status") == "afgewezen"]
+    rejected = [
+        (i + 2, p) for i, p in enumerate(all_posts)
+        if p.get("status") == "afgewezen"
+        and (filter_bedrijfsnaam is None or p.get("bedrijfsnaam") == filter_bedrijfsnaam)
+    ]
     if not rejected:
-        return 0
+        return 0, ""
 
-    ac = anthropic.Anthropic(api_key=api_key)
-    sa_info = json.loads(sa_info_json)
-    gc = _get_write_client(sa_info)
-    worksheet = gc.open_by_key(spreadsheet_id).worksheet(tab_name)
+    try:
+        ac = anthropic.Anthropic(api_key=api_key)
+        sa_info = json.loads(sa_info_json)
+        gc = _get_write_client(sa_info)
+        worksheet = gc.open_by_key(spreadsheet_id).worksheet(tab_name)
 
-    updates = []
-    for row_idx, post in rejected:
-        client = client_dict.get(post.get("bedrijfsnaam", ""), {})
-        prompt = _regenerate_prompt(post, client)
+        updates = []
+        for row_idx, post in rejected:
+            client = client_dict.get(post.get("bedrijfsnaam", ""), {})
+            prompt = _regenerate_prompt(post, client)
 
-        msg = ac.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=1024,
-            system="Je bent een professionele social media contentschrijver. Retourneer uitsluitend valide JSON.",
-            messages=[{"role": "user", "content": prompt}],
-        )
-        raw = msg.content[0].text.strip().strip("```json").strip("```").strip()
-        new_post = json.loads(raw)
+            msg = ac.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=1024,
+                system="Je bent een professionele social media contentschrijver. Retourneer uitsluitend valide JSON.",
+                messages=[{"role": "user", "content": prompt}],
+            )
+            raw = msg.content[0].text.strip()
+            if raw.startswith("```"):
+                raw = raw.split("```")[1].lstrip("json").strip()
+            raw = raw.rstrip("```").strip()
+            new_post = json.loads(raw)
 
-        updates.append({
-            "range": f"F{row_idx}:H{row_idx}",
-            "values": [[new_post.get("caption", ""), new_post.get("hashtags", ""), "concept"]],
-        })
+            updates.append({
+                "range": f"F{row_idx}:H{row_idx}",
+                "values": [[new_post.get("caption", ""), new_post.get("hashtags", ""), "concept"]],
+            })
 
-    if updates:
-        worksheet.batch_update(updates, value_input_option="RAW")
+        if updates:
+            worksheet.batch_update(updates, value_input_option="RAW")
 
-    return len(rejected)
+        return len(rejected), ""
+
+    except Exception as e:
+        return 0, str(e)
 
 
 def _build_approved_docx(bedrijfsnaam: str, approved_posts: list[dict]) -> bytes:
@@ -900,18 +916,21 @@ with tab_goedkeuring:
                                 else:
                                     if client_updates:
                                         save_statuses(spreadsheet_id, selected_tab, client_updates, sa_json)
-                                    fresh_posts   = load_posts_from_tab(spreadsheet_id, selected_tab, sa_json)
                                     load_posts_from_tab.clear()
-                                    client_only   = [p for p in fresh_posts if p.get("bedrijfsnaam") == bedrijfsnaam]
-                                    client_dict   = load_client_dict(spreadsheet_id, sa_json)
+                                    fresh_posts = load_posts_from_tab(spreadsheet_id, selected_tab, sa_json)
+                                    client_dict = load_client_dict(spreadsheet_id, sa_json)
                                     with st.spinner(f"{n_rej_client} posts regenereren..."):
-                                        count = regenerate_rejected(
-                                            client_only, client_dict, api_key,
+                                        count, err = regenerate_rejected(
+                                            fresh_posts, client_dict, api_key,
                                             spreadsheet_id, selected_tab, sa_json,
+                                            filter_bedrijfsnaam=bedrijfsnaam,
                                         )
                                         load_posts_from_tab.clear()
                                         st.session_state.pop(state_key, None)
-                                    st.success(f"✓ {count} posts herschreven → concept")
+                                    if err:
+                                        st.error(f"Fout: {err}")
+                                    else:
+                                        st.success(f"✓ {count} posts herschreven → terug naar concept")
 
                         with col_export_c:
                             if n_app_client == 0:
@@ -960,21 +979,23 @@ with tab_goedkeuring:
                         if not api_key:
                             st.error("ANTHROPIC_API_KEY ontbreekt in secrets.")
                         else:
-                            # Sla eerst huidige wijzigingen op
                             updates = st.session_state.get(state_key, {})
                             if updates:
                                 save_statuses(spreadsheet_id, selected_tab, updates, sa_json)
-                            fresh_posts = load_posts_from_tab(spreadsheet_id, selected_tab, sa_json)
                             load_posts_from_tab.clear()
+                            fresh_posts = load_posts_from_tab(spreadsheet_id, selected_tab, sa_json)
                             client_dict = load_client_dict(spreadsheet_id, sa_json)
                             with st.spinner(f"{n_rejected} posts regenereren via Claude..."):
-                                count = regenerate_rejected(
+                                count, err = regenerate_rejected(
                                     fresh_posts, client_dict, api_key,
                                     spreadsheet_id, selected_tab, sa_json,
                                 )
                                 load_posts_from_tab.clear()
                                 st.session_state.pop(state_key, None)
-                            st.success(f"{count} posts herschreven en teruggezet naar 'concept'. Ververs de pagina om ze te zien.")
+                            if err:
+                                st.error(f"Fout: {err}")
+                            else:
+                                st.success(f"✓ {count} posts herschreven → terug naar concept")
 
                 with col_export:
                     export_disabled = n_approved == 0
