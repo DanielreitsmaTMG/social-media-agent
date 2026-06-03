@@ -15,6 +15,7 @@ Vereist in .env (of Streamlit Cloud secrets):
 import base64
 import json
 import os
+import re
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
 
@@ -116,6 +117,64 @@ def get_profile_image(linkedin_url: str, website_url: str) -> str:
             return f"https://www.google.com/s2/favicons?domain={domain}&sz=128"
 
     return ""
+
+
+def _fetch_page_text(url: str) -> str:
+    """Haalt beschrijvingstekst op van een URL (og:description of meta description)."""
+    if not url:
+        return ""
+    try:
+        r = requests.get(url, headers=SCRAPE_HEADERS, timeout=8, allow_redirects=True)
+        if r.status_code == 200:
+            soup = BeautifulSoup(r.text, "html.parser")
+            for attr, name in [("property", "og:description"), ("name", "description")]:
+                tag = soup.find("meta", {attr: name})
+                if tag and tag.get("content"):
+                    return tag["content"]
+    except Exception:
+        pass
+    return ""
+
+
+def _parse_follower_count(text: str) -> str:
+    """Extraheert volgersaantal uit tekst, bijv. '12.453 volgers' → '12.453'."""
+    if not text:
+        return ""
+    patterns = [
+        r"([\d.,]+[KkMm]?)\s*(?:followers|volgers|abonnees|subscribers)",
+        r"([\d.,]+[KkMm]?)\s*(?:likes|vind-ik-leuks|fans)",
+    ]
+    for p in patterns:
+        m = re.search(p, text, re.IGNORECASE)
+        if m:
+            return m.group(1)
+    return ""
+
+
+@st.cache_data(ttl=3600)
+def get_follower_counts(instagram_url: str, linkedin_url: str, facebook_url: str) -> dict:
+    """Probeert volgersaantallen te scrapen per platform. Geeft '—' terug bij mislukking."""
+    counts = {"instagram": "—", "linkedin": "—", "facebook": "—"}
+
+    if linkedin_url:
+        text = _fetch_page_text(linkedin_url)
+        count = _parse_follower_count(text)
+        if count:
+            counts["linkedin"] = count
+
+    if instagram_url:
+        text = _fetch_page_text(instagram_url)
+        count = _parse_follower_count(text)
+        if count:
+            counts["instagram"] = count
+
+    if facebook_url:
+        text = _fetch_page_text(facebook_url)
+        count = _parse_follower_count(text)
+        if count:
+            counts["facebook"] = count
+
+    return counts
 
 
 @st.cache_data(ttl=300)  # Cache 5 minuten
@@ -245,65 +304,86 @@ else:
 
     # Tabel
     for client in clients:
-        total = _total_posts_pw(client)
-        with st.expander(
-            f"{client['bedrijfsnaam']}  ·  {_platform_summary_text(client)}  ·  {total} posts/week",
-            expanded=False,
-        ):
-            col_img, col_a, col_b = st.columns([1, 3, 3])
+        total     = _total_posts_pw(client)
+        img_url   = get_profile_image(
+            client.get("linkedin_url", ""),
+            client.get("website_url", ""),
+        )
+        followers = get_follower_counts(
+            client.get("instagram_url", ""),
+            client.get("linkedin_url", ""),
+            client.get("facebook_url", ""),
+        )
 
-            with col_img:
-                img_url = get_profile_image(
-                    client.get("linkedin_url", ""),
-                    client.get("website_url", ""),
+        # Logo altijd zichtbaar naast expander
+        col_logo, col_main = st.columns([1, 11])
+
+        with col_logo:
+            if img_url:
+                st.markdown(
+                    f'<img src="{img_url}" style="width:52px;height:52px;'
+                    f'object-fit:cover;border-radius:10px;margin-top:6px;">',
+                    unsafe_allow_html=True,
                 )
-                if img_url:
-                    st.markdown(
-                        f'<img src="{img_url}" style="width:90px;height:90px;'
-                        f'object-fit:cover;border-radius:12px;margin-top:4px;">',
-                        unsafe_allow_html=True,
-                    )
-                else:
-                    st.markdown(
-                        '<div style="width:90px;height:90px;border-radius:12px;'
-                        'background:#eee;display:flex;align-items:center;'
-                        'justify-content:center;font-size:32px;">🏢</div>',
-                        unsafe_allow_html=True,
-                    )
+            else:
+                st.markdown(
+                    '<div style="width:52px;height:52px;border-radius:10px;'
+                    'background:#e8e8e8;display:flex;align-items:center;'
+                    'justify-content:center;font-size:22px;margin-top:6px;">🏢</div>',
+                    unsafe_allow_html=True,
+                )
 
-            with col_a:
-                st.markdown("**Platformen**")
-                st.markdown(_platform_summary_html(client), unsafe_allow_html=True)
-                st.write("")
+        with col_main:
+            with st.expander(
+                f"{client['bedrijfsnaam']}  ·  {_platform_summary_text(client)}  ·  {total} posts/week",
+                expanded=False,
+            ):
+                col_a, col_b = st.columns(2)
 
-                st.markdown("**Toon**")
-                st.write(client.get("toon") or "_Niet ingevuld_")
+                with col_a:
+                    st.markdown("**Platformen & volgers**")
+                    for platform, label in PLATFORM_LABELS.items():
+                        count = client.get(f"{platform}_posts_pw", 0)
+                        if count:
+                            icon  = PLATFORM_ICON_HTML[platform]
+                            color = PLATFORM_COLORS[platform]
+                            foll  = followers.get(platform, "—")
+                            foll_text = f"· {foll} volgers" if foll and foll != "—" else ""
+                            st.markdown(
+                                f'{icon}<span style="color:{color};font-weight:600;">{label}</span>'
+                                f' <span style="color:#666;">{count}x/week {foll_text}</span>',
+                                unsafe_allow_html=True,
+                            )
+                    st.write("")
 
-                st.markdown("**Doelgroep**")
-                st.write(client.get("doelgroep") or "_Niet ingevuld_")
+                    st.markdown("**Toon**")
+                    st.write(client.get("toon") or "_Niet ingevuld_")
 
-            with col_b:
-                st.markdown("**Kernthema's**")
-                themas = client.get("kernthemas", "")
-                if themas:
-                    for t in themas.split(","):
-                        st.write(f"· {t.strip()}")
-                else:
-                    st.write("_Niet ingevuld_")
+                    st.markdown("**Doelgroep**")
+                    st.write(client.get("doelgroep") or "_Niet ingevuld_")
 
-                st.markdown("**Vaste hashtags**")
-                st.code(client.get("vaste_hashtags") or "—", language=None)
+                with col_b:
+                    st.markdown("**Kernthema's**")
+                    themas = client.get("kernthemas", "")
+                    if themas:
+                        for t in themas.split(","):
+                            st.write(f"· {t.strip()}")
+                    else:
+                        st.write("_Niet ingevuld_")
 
-                urls = {
-                    "Website":   client.get("website_url"),
-                    "Instagram": client.get("instagram_url"),
-                    "LinkedIn":  client.get("linkedin_url"),
-                    "Facebook":  client.get("facebook_url"),
-                }
-                links = [(label, url) for label, url in urls.items() if url]
-                if links:
-                    st.markdown("**Links**")
-                    for label, url in links:
-                        st.markdown(f"[{label}]({url})")
+                    st.markdown("**Vaste hashtags**")
+                    st.code(client.get("vaste_hashtags") or "—", language=None)
+
+                    urls = {
+                        "Website":   client.get("website_url"),
+                        "Instagram": client.get("instagram_url"),
+                        "LinkedIn":  client.get("linkedin_url"),
+                        "Facebook":  client.get("facebook_url"),
+                    }
+                    links = [(label, url) for label, url in urls.items() if url]
+                    if links:
+                        st.markdown("**Links**")
+                        for label, url in links:
+                            st.markdown(f"[{label}]({url})")
 
     st.caption(f"Gegevens worden elke 5 minuten vernieuwd · Laatste update: {datetime.now().strftime('%H:%M:%S')}")
