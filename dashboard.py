@@ -258,6 +258,95 @@ def _total_posts_pw(client: dict) -> int:
     return sum(client.get(f"{p}_posts_pw", 0) for p in ("instagram", "linkedin", "facebook"))
 
 
+# ── Globale CSS ───────────────────────────────────────────────────────────────
+
+st.markdown("""
+<style>
+/* Card-stijl voor elke klant */
+.client-card {
+    display: flex;
+    align-items: stretch;
+    border: 1px solid #e4e4e7;
+    border-radius: 12px;
+    margin-bottom: 10px;
+    overflow: hidden;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    transition: box-shadow .15s;
+}
+.client-card:hover {
+    box-shadow: 0 3px 10px rgba(0,0,0,.1);
+}
+
+/* Logo-blok links */
+.client-logo-block {
+    width: 64px;
+    min-width: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f4f4f5;
+    border-right: 1px solid #e4e4e7;
+    padding: 12px 8px;
+}
+.client-logo-block img {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    object-fit: cover;
+}
+.client-logo-placeholder {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    background: #d4d4d8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+}
+
+/* Koptekst rechts van het logo */
+.client-header-content {
+    flex: 1;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+}
+.client-name {
+    font-size: 15px;
+    font-weight: 700;
+    color: #18181b;
+    line-height: 1.2;
+}
+.client-meta {
+    font-size: 13px;
+    color: #71717a;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.client-meta img {
+    vertical-align: middle;
+    margin-right: 3px;
+}
+
+/* Verberg de Streamlit expander-knop stijl binnen kaarten */
+.card-expander [data-testid="stExpander"] {
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+}
+.card-expander [data-testid="stExpander"] summary {
+    padding: 14px 16px !important;
+    border-bottom: 1px solid #f0f0f0;
+}
+</style>
+""", unsafe_allow_html=True)
+
 # ── Layout ────────────────────────────────────────────────────────────────────
 
 st.title("📱 Social Media Agent")
@@ -302,9 +391,10 @@ else:
     if search:
         clients = [c for c in clients if search.lower() in c.get("bedrijfsnaam", "").lower()]
 
-    # Tabel
+    # Klantenkaarten
     for client in clients:
         total     = _total_posts_pw(client)
+        klant_id  = client.get("klant_id", client["bedrijfsnaam"])
         img_url   = get_profile_image(
             client.get("linkedin_url", ""),
             client.get("website_url", ""),
@@ -315,75 +405,88 @@ else:
             client.get("facebook_url", ""),
         )
 
-        # Logo altijd zichtbaar naast expander
-        col_logo, col_main = st.columns([1, 11])
-
-        with col_logo:
-            if img_url:
-                st.markdown(
-                    f'<img src="{img_url}" style="width:52px;height:52px;'
-                    f'object-fit:cover;border-radius:10px;margin-top:6px;">',
-                    unsafe_allow_html=True,
+        # Bouw platform-badges voor de header
+        badge_parts = []
+        for platform, label in PLATFORM_LABELS.items():
+            count = client.get(f"{platform}_posts_pw", 0)
+            if count:
+                color = PLATFORM_COLORS[platform]
+                icon  = PLATFORM_ICON_HTML[platform]
+                foll  = followers.get(platform, "—")
+                foll_str = f" · {foll}" if foll and foll != "—" else ""
+                badge_parts.append(
+                    f'<span style="display:inline-flex;align-items:center;gap:3px;'
+                    f'background:{color}18;color:{color};border-radius:6px;'
+                    f'padding:2px 8px;font-size:12px;font-weight:600;">'
+                    f'{icon}{label} {count}x{foll_str}</span>'
                 )
-            else:
-                st.markdown(
-                    '<div style="width:52px;height:52px;border-radius:10px;'
-                    'background:#e8e8e8;display:flex;align-items:center;'
-                    'justify-content:center;font-size:22px;margin-top:6px;">🏢</div>',
-                    unsafe_allow_html=True,
-                )
+        badges_html = "&nbsp;".join(badge_parts)
 
-        with col_main:
-            with st.expander(
-                f"{client['bedrijfsnaam']}  ·  {_platform_summary_text(client)}  ·  {total} posts/week",
-                expanded=False,
-            ):
-                col_a, col_b = st.columns(2)
+        # Logo HTML
+        if img_url:
+            logo_html = f'<img src="{img_url}">'
+        else:
+            logo_html = '<div class="client-logo-placeholder">🏢</div>'
 
-                with col_a:
-                    st.markdown("**Platformen & volgers**")
-                    for platform, label in PLATFORM_LABELS.items():
-                        count = client.get(f"{platform}_posts_pw", 0)
-                        if count:
-                            icon  = PLATFORM_ICON_HTML[platform]
-                            color = PLATFORM_COLORS[platform]
-                            foll  = followers.get(platform, "—")
-                            foll_text = f"· {foll} volgers" if foll and foll != "—" else ""
-                            st.markdown(
-                                f'{icon}<span style="color:{color};font-weight:600;">{label}</span>'
-                                f' <span style="color:#666;">{count}x/week {foll_text}</span>',
-                                unsafe_allow_html=True,
-                            )
-                    st.write("")
+        # Card header (altijd zichtbaar)
+        st.markdown(f"""
+        <div class="client-card">
+            <div class="client-logo-block">{logo_html}</div>
+            <div class="client-header-content">
+                <div class="client-name">{client['bedrijfsnaam']}</div>
+                <div class="client-meta">{badges_html}&nbsp;&nbsp;<span>{total} posts/week</span></div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
-                    st.markdown("**Toon**")
-                    st.write(client.get("toon") or "_Niet ingevuld_")
+        # Uitklapbare details direct eronder
+        with st.expander("Details", expanded=False):
+            col_a, col_b = st.columns(2)
 
-                    st.markdown("**Doelgroep**")
-                    st.write(client.get("doelgroep") or "_Niet ingevuld_")
+            with col_a:
+                st.markdown("**Platformen & volgers**")
+                for platform, label in PLATFORM_LABELS.items():
+                    count = client.get(f"{platform}_posts_pw", 0)
+                    if count:
+                        icon  = PLATFORM_ICON_HTML[platform]
+                        color = PLATFORM_COLORS[platform]
+                        foll  = followers.get(platform, "—")
+                        foll_text = f"· {foll} volgers" if foll and foll != "—" else ""
+                        st.markdown(
+                            f'{icon}<span style="color:{color};font-weight:600;">{label}</span>'
+                            f' <span style="color:#555;">{count}x/week {foll_text}</span>',
+                            unsafe_allow_html=True,
+                        )
+                st.write("")
 
-                with col_b:
-                    st.markdown("**Kernthema's**")
-                    themas = client.get("kernthemas", "")
-                    if themas:
-                        for t in themas.split(","):
-                            st.write(f"· {t.strip()}")
-                    else:
-                        st.write("_Niet ingevuld_")
+                st.markdown("**Toon**")
+                st.write(client.get("toon") or "_Niet ingevuld_")
 
-                    st.markdown("**Vaste hashtags**")
-                    st.code(client.get("vaste_hashtags") or "—", language=None)
+                st.markdown("**Doelgroep**")
+                st.write(client.get("doelgroep") or "_Niet ingevuld_")
 
-                    urls = {
-                        "Website":   client.get("website_url"),
-                        "Instagram": client.get("instagram_url"),
-                        "LinkedIn":  client.get("linkedin_url"),
-                        "Facebook":  client.get("facebook_url"),
-                    }
-                    links = [(label, url) for label, url in urls.items() if url]
-                    if links:
-                        st.markdown("**Links**")
-                        for label, url in links:
-                            st.markdown(f"[{label}]({url})")
+            with col_b:
+                st.markdown("**Kernthema's**")
+                themas = client.get("kernthemas", "")
+                if themas:
+                    for t in themas.split(","):
+                        st.write(f"· {t.strip()}")
+                else:
+                    st.write("_Niet ingevuld_")
+
+                st.markdown("**Vaste hashtags**")
+                st.code(client.get("vaste_hashtags") or "—", language=None)
+
+                urls = {
+                    "Website":   client.get("website_url"),
+                    "Instagram": client.get("instagram_url"),
+                    "LinkedIn":  client.get("linkedin_url"),
+                    "Facebook":  client.get("facebook_url"),
+                }
+                links = [(lbl, url) for lbl, url in urls.items() if url]
+                if links:
+                    st.markdown("**Links**")
+                    for lbl, url in links:
+                        st.markdown(f"[{lbl}]({url})")
 
     st.caption(f"Gegevens worden elke 5 minuten vernieuwd · Laatste update: {datetime.now().strftime('%H:%M:%S')}")
