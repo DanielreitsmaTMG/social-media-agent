@@ -71,13 +71,30 @@ def _build_prompt(client: dict, scraped_context: str, week_start: date, week_end
         else ""
     )
 
+    today = date.today()
     week_label = (
         f"{_format_date_nl(week_start)} – {_format_date_nl(week_end)} {week_end.year}"
         if lang == "nl"
         else f"{week_start.strftime('%b %d')} – {week_end.strftime('%b %d, %Y')}"
     )
 
+    # Bouw een dagoverzicht zodat Claude exact weet welke datum bij welke dag hoort
+    day_dates = []
+    for i, day_name in enumerate(days[:5]):
+        d = week_start + timedelta(days=i)
+        day_dates.append(f"  {day_name} = {_format_date_nl(d)} {d.year}")
+    day_date_overview = "\n".join(day_dates)
+
     return f"""Genereer social media posts voor {client['bedrijfsnaam']} voor de week van {week_label}.
+
+Vandaag is het {_format_date_nl(today)} {today.year}. De posts worden gepubliceerd in de week van {week_label}.
+De exacte publicatiedatums zijn:
+{day_date_overview}
+
+Belangrijk voor temporele relevantie:
+- Gebruik "vandaag", "morgen", "deze week" alleen als die verwijzing klopt voor de publicatiedatum van de post
+- Verwijs NIET naar evenementen, deadlines of acties die vóór {_format_date_nl(week_start)} {week_start.year} vallen — die zijn al voorbij als de post gepubliceerd wordt
+- Als gescrapete content verwijst naar een datum die voor de targetweek ligt, gebruik die informatie dan alleen als achtergrond voor de toon, niet als actueel nieuws
 
 Klantprofiel:
 - Toon: {client['toon']}

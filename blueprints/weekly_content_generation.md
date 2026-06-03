@@ -100,6 +100,7 @@ FACEBOOK (2 posts)
 - Eindig LinkedIn-posts niet met een vraag als er al een call-to-action is
 - Gebruik nooit een koppelteken (-) in de posttekst, ook niet als opsommingsteken of gedachtestreepje
 - Een CTA linkt altijd naar de pagina die inhoudelijk aansluit bij het onderwerp van die post — niet naar de homepage, maar naar de relevante dienstenpagina, blogpost of contactpagina
+- Temporele relevantie: verwijs nooit naar evenementen of deadlines die vóór de publicatiedatum van de post vallen. Gescrapete content met verouderde datums mag alleen als achtergrond voor toon dienen, niet als actueel nieuws
 
 ---
 
