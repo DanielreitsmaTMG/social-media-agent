@@ -753,12 +753,36 @@ with tab_goedkeuring:
                     )
 
                 # Totaaloverzicht bovenaan
+                # Session state voor wijzigingen
+                state_key = f"updates_{selected_tab}"
+                if state_key not in st.session_state:
+                    st.session_state[state_key] = {}
+                cur_updates = st.session_state[state_key]
+
+                def _effective_status(row_idx: int, post: dict) -> str:
+                    """Huidige status: session state heeft voorrang boven sheet."""
+                    override = cur_updates.get(row_idx)
+                    return override[0] if override else post.get("status", "concept")
+
+                def _client_progress_live(rows):
+                    statuses  = [_effective_status(ri, p) for ri, p in rows]
+                    total     = len(statuses)
+                    approved  = sum(1 for s in statuses if s == "goedgekeurd")
+                    reviewed  = sum(1 for s in statuses if s != "concept")
+                    if approved == total:
+                        return 100, "Klaar", "#22c55e"
+                    elif reviewed > 0:
+                        return 66, "In review", "#f59e0b"
+                    else:
+                        return 33, "Niet gestart", "#ef4444"
+
+                # Overzicht op basis van live UI-staat
                 total_posts  = len(posts)
-                approved_all = sum(1 for p in posts if p.get("status") == "goedgekeurd")
-                rejected_all = sum(1 for p in posts if p.get("status") == "afgewezen")
+                approved_all = sum(_effective_status(i + 2, p) == "goedgekeurd" for i, p in enumerate(posts))
+                rejected_all = sum(_effective_status(i + 2, p) == "afgewezen"   for i, p in enumerate(posts))
                 pending_all  = total_posts - approved_all - rejected_all
-                done_clients = sum(1 for name, rows in clients_in_week.items()
-                                   if _client_progress(rows)[0] == 100)
+                done_clients = sum(1 for _, rows in clients_in_week.items()
+                                   if _client_progress_live(rows)[0] == 100)
                 total_clients = len(clients_in_week)
 
                 c1, c2, c3, c4, c5 = st.columns(5)
@@ -768,7 +792,6 @@ with tab_goedkeuring:
                 c4.metric("❌ Afgewezen", rejected_all)
                 c5.metric("⏳ Concept", pending_all)
 
-                # Globale voortgangsbalk
                 overall_pct = int(approved_all / total_posts * 100) if total_posts else 0
                 st.markdown(
                     f'<div style="background:#e5e7eb;border-radius:99px;height:8px;margin:8px 0 16px 0;">'
@@ -780,24 +803,18 @@ with tab_goedkeuring:
 
                 st.divider()
 
-                # Session state voor wijzigingen
-                state_key = f"updates_{selected_tab}"
-                if state_key not in st.session_state:
-                    st.session_state[state_key] = {}
-
                 # Sorteer: onvolledig eerst, dan op naam
                 sorted_clients = sorted(
                     clients_in_week.items(),
-                    key=lambda x: (_client_progress(x[1])[0], x[0])
+                    key=lambda x: (_client_progress_live(x[1])[0], x[0])
                 )
 
                 for bedrijfsnaam, rows in sorted_clients:
-                    pct, pct_label, pct_color = _client_progress(rows)
-                    n_approved = sum(1 for _, p in rows if p.get("status") == "goedgekeurd")
+                    pct, pct_label, pct_color = _client_progress_live(rows)
+                    n_approved = sum(1 for ri, p in rows if _effective_status(ri, p) == "goedgekeurd")
                     n_total    = len(rows)
                     urgent_dot = "🔴 " if is_urgent and pct < 100 else ""
 
-                    # Voortgangsbadge in de expander-titel
                     expander_label = (
                         f"{urgent_dot}{bedrijfsnaam}  ·  "
                         f"{pct}% — {pct_label}  ·  "
@@ -831,50 +848,57 @@ with tab_goedkeuring:
                             )
 
                             for row_idx, post in platform_rows:
-                                dag   = post.get("dag", "")
-                                datum = post.get("publicatiedatum", "")
-                                current_status = st.session_state[state_key].get(
-                                    row_idx, (post.get("status", "concept"), post.get("opmerkingen", ""))
-                                )[0]
+                                dag    = post.get("dag", "")
+                                datum  = post.get("publicatiedatum", "")
+                                stored = cur_updates.get(
+                                    row_idx,
+                                    (post.get("status", "concept"), post.get("opmerkingen", ""))
+                                )
+                                current_status = stored[0]
+                                current_note   = stored[1]
 
                                 with st.container():
-                                    st.markdown(
-                                        f'<p style="font-weight:600;margin:8px 0 2px 0;">📅 {dag} — {datum}</p>',
-                                        unsafe_allow_html=True,
-                                    )
-                                    st.markdown(
-                                        f'<div style="background:#f8f8f8;border-left:3px solid {color};'
-                                        f'padding:10px 14px;border-radius:0 8px 8px 0;'
-                                        f'font-size:14px;margin-bottom:4px;white-space:pre-wrap;">'
-                                        f'{post.get("caption","")}</div>',
-                                        unsafe_allow_html=True,
-                                    )
-                                    st.caption(post.get("hashtags", ""))
+                                    col_post, col_ctrl = st.columns([5, 3])
 
-                                    col_s, col_o = st.columns([2, 4])
-                                    with col_s:
-                                        new_status = st.selectbox(
+                                    with col_post:
+                                        st.markdown(
+                                            f'<p style="font-weight:600;font-size:13px;margin:4px 0 2px 0;">'
+                                            f'📅 {dag} — {datum}</p>'
+                                            f'<div style="background:#f8f8f8;border-left:3px solid {color};'
+                                            f'padding:8px 12px;border-radius:0 8px 8px 0;'
+                                            f'font-size:13px;white-space:pre-wrap;">'
+                                            f'{post.get("caption","")}</div>'
+                                            f'<p style="font-size:11px;color:{color};margin:3px 0 6px 0;">'
+                                            f'{post.get("hashtags","")}</p>',
+                                            unsafe_allow_html=True,
+                                        )
+
+                                    with col_ctrl:
+                                        new_status = st.segmented_control(
                                             "Status",
-                                            STATUS_OPTIONS,
-                                            index=STATUS_OPTIONS.index(current_status),
+                                            options=STATUS_OPTIONS,
+                                            default=current_status,
                                             key=f"status_{row_idx}",
                                             label_visibility="collapsed",
-                                        )
-                                    with col_o:
-                                        current_note = st.session_state[state_key].get(
-                                            row_idx, (post.get("status", "concept"), post.get("opmerkingen", ""))
-                                        )[1]
-                                        new_note = st.text_input(
-                                            "Opmerking",
-                                            value=current_note,
-                                            placeholder="Optionele opmerking...",
-                                            key=f"note_{row_idx}",
-                                            label_visibility="collapsed",
-                                        )
+                                            format_func=lambda s: {
+                                                "concept": "⏳",
+                                                "goedgekeurd": "✅",
+                                                "afgewezen": "❌",
+                                            }.get(s, s),
+                                        ) or current_status
 
-                                    # Sla lokaal op in session state
-                                    st.session_state[state_key][row_idx] = (new_status, new_note)
-                                    st.markdown("<hr style='margin:8px 0;border:none;border-top:1px solid #eee;'>", unsafe_allow_html=True)
+                                        new_note = ""
+                                        if new_status == "afgewezen":
+                                            new_note = st.text_input(
+                                                "Reden",
+                                                value=current_note,
+                                                placeholder="Wat moet er anders?",
+                                                key=f"note_{row_idx}",
+                                                label_visibility="collapsed",
+                                            )
+
+                                    cur_updates[row_idx] = (new_status, new_note)
+                                    st.markdown("<hr style='margin:6px 0;border:none;border-top:1px solid #eee;'>", unsafe_allow_html=True)
 
                         # Knoppen per klant
                         client_row_indices = {row_idx for row_idx, _ in rows}
