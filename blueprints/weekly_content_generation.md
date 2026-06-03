@@ -2,14 +2,14 @@
 
 ## Doel
 
-Genereer elke week op donderdag om 13:00 voor alle actieve klanten de social media posts voor de week erop.  
+Genereer elke week op woensdagavond om 23:00 voor alle actieve klanten de social media posts voor de week erop.  
 Elke klant krijgt een eigen Google Doc met kant-en-klare posts per platform.
 
 ---
 
 ## Trigger
 
-Automatisch elke **donderdag om 13:00**.  
+Automatisch elke **woensdag om 23:00**.  
 Handmatig starten kan ook — geef dan de gewenste weekdatum mee (standaard: eerstvolgende maandag).
 
 ---

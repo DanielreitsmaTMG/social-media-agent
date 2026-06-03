@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # BOS-framework: Marketing Agent Social Media
 
 Een agent die wekelijks voor ~50 klanten social media posts schrijft en aanlevert.  
-Elke donderdag om 13:00 genereert de agent posts voor de week erop, per klant een eigen Google Doc.
+Elke woensdagavond om 23:00 genereert de agent posts voor de week erop, per klant een eigen Google Doc.
 
 Dit project werkt volgens het **BOS-framework** (Blueprints, Orchestrators, Systems):  
 AI doet het denkwerk, deterministische code doet de uitvoering.

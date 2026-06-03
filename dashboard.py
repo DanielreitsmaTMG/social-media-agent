@@ -59,13 +59,13 @@ PLATFORM_LABELS = {
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
 
-def _next_thursday_13() -> datetime:
-    """Geeft de eerstvolgende donderdag om 13:00 Amsterdam-tijd terug (als UTC-naïeve datetime)."""
+def _next_wednesday_23() -> datetime:
+    """Geeft de eerstvolgende woensdag om 23:00 Amsterdam-tijd terug (als UTC-naïeve datetime)."""
     now = datetime.now()
-    days_ahead = (3 - now.weekday()) % 7  # 3 = donderdag
-    if days_ahead == 0 and now.hour >= 13:
+    days_ahead = (2 - now.weekday()) % 7  # 2 = woensdag
+    if days_ahead == 0 and now.hour >= 23:
         days_ahead = 7
-    next_run = now.replace(hour=13, minute=0, second=0, microsecond=0) + timedelta(days=days_ahead)
+    next_run = now.replace(hour=23, minute=0, second=0, microsecond=0) + timedelta(days=days_ahead)
     return next_run
 
 
@@ -395,13 +395,13 @@ st.divider()
 # Volgende run
 col1, col2, col3 = st.columns(3)
 
-next_run = _next_thursday_13()
+next_run = _next_wednesday_23()
 delta    = next_run - datetime.now()
 
 with col1:
     st.metric(
         label="Volgende run",
-        value=next_run.strftime("donderdag %d %b om 13:00"),
+        value=next_run.strftime("woensdag %d %b om 23:00"),
         delta=f"over {_format_countdown(delta)}",
         delta_color="off",
     )
