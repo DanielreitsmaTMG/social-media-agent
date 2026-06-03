@@ -22,7 +22,7 @@ from urllib.parse import urlparse
 import gspread
 import requests
 import streamlit as st
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup  # nog gebruikt voor logo-scraping
 from google.oauth2.service_account import Credentials as WriteCredentials
 from google.oauth2.service_account import Credentials
 from dotenv import load_dotenv
@@ -128,91 +128,13 @@ def _extract_handle(url: str) -> str:
     return parts[0] if parts else ""
 
 
-def _fetch_page_text(url: str) -> str:
-    """Haalt og:description of meta description op van een URL."""
-    if not url:
-        return ""
-    try:
-        r = requests.get(url, headers=SCRAPE_HEADERS, timeout=8, allow_redirects=True)
-        if r.status_code == 200:
-            soup = BeautifulSoup(r.text, "html.parser")
-            for attr, name in [("property", "og:description"), ("name", "description")]:
-                tag = soup.find("meta", {attr: name})
-                if tag and tag.get("content"):
-                    return tag["content"]
-    except Exception:
-        pass
-    return ""
-
-
-def _parse_follower_count(text: str) -> str:
-    """Extraheert volgersaantal uit tekst."""
-    if not text:
-        return ""
-    for p in [
-        r"([\d.,]+[KkMm]?)\s*(?:followers|volgers|abonnees|subscribers)",
-        r"([\d.,]+[KkMm]?)\s*(?:likes|vind-ik-leuks|fans)",
-    ]:
-        m = re.search(p, text, re.IGNORECASE)
-        if m:
-            return m.group(1)
-    return ""
-
-
-def _socialblade_count(platform: str, handle: str) -> str:
-    """Haalt volgersaantal op via Social Blade als fallback."""
-    if not handle:
-        return ""
-    paths = {"instagram": "instagram/user", "facebook": "facebook/page"}
-    path = paths.get(platform)
-    if not path:
-        return ""
-    try:
-        r = requests.get(
-            f"https://socialblade.com/{path}/{handle}",
-            headers=SCRAPE_HEADERS,
-            timeout=10,
-        )
-        if r.status_code == 200:
-            soup = BeautifulSoup(r.text, "html.parser")
-            # Social Blade zet volgers in een <span> naast het label
-            text = soup.get_text(" ", strip=True)
-            m = re.search(r"([\d,]+)\s*(?:Followers|Subscriber)", text, re.IGNORECASE)
-            if m:
-                # Converteer 1,234 → 1.234 (NL-stijl)
-                return m.group(1).replace(",", ".")
-    except Exception:
-        pass
-    return ""
-
-
-@st.cache_data(ttl=3600)
-def get_follower_counts(instagram_url: str, linkedin_url: str, facebook_url: str) -> dict:
-    """Haalt volgersaantallen op: eerst direct, dan via Social Blade."""
-    counts = {"instagram": "—", "linkedin": "—", "facebook": "—"}
-
-    # LinkedIn — werkt direct via og:description
-    if linkedin_url:
-        count = _parse_follower_count(_fetch_page_text(linkedin_url))
-        counts["linkedin"] = count or "—"
-
-    # Instagram — direct geblokkeerd, gebruik Social Blade
-    if instagram_url:
-        count = _parse_follower_count(_fetch_page_text(instagram_url))
-        if not count:
-            handle = _extract_handle(instagram_url)
-            count = _socialblade_count("instagram", handle)
-        counts["instagram"] = count or "—"
-
-    # Facebook — direct geblokkeerd, gebruik Social Blade
-    if facebook_url:
-        count = _parse_follower_count(_fetch_page_text(facebook_url))
-        if not count:
-            handle = _extract_handle(facebook_url)
-            count = _socialblade_count("facebook", handle)
-        counts["facebook"] = count or "—"
-
-    return counts
+def _client_follower_counts(client: dict) -> dict:
+    """Leest opgeslagen volgersaantallen uit de Google Sheet — geen live scraping."""
+    return {
+        "instagram": client.get("instagram_volgers", "") or "—",
+        "linkedin":  client.get("linkedin_volgers",  "") or "—",
+        "facebook":  client.get("facebook_volgers",  "") or "—",
+    }
 
 
 @st.cache_data(ttl=300)  # Cache 5 minuten
@@ -439,11 +361,7 @@ with tab_klanten:
             client.get("linkedin_url", ""),
             client.get("website_url", ""),
         )
-        followers = get_follower_counts(
-            client.get("instagram_url", ""),
-            client.get("linkedin_url", ""),
-            client.get("facebook_url", ""),
-        )
+        followers = _client_follower_counts(client)
 
         # Bouw platform-badges voor de header
         badge_parts = []

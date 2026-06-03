@@ -27,7 +27,11 @@ echo "--- Stap 4: Word-documenten opslaan ---" >> "$LOG_FILE"
 /usr/bin/python3 systems/save_local_docs.py >> "$LOG_FILE" 2>&1
 
 echo "" >> "$LOG_FILE"
-echo "--- Stap 5: Posts uploaden naar Google Sheets (goedkeuring) ---" >> "$LOG_FILE"
+echo "--- Stap 5: Volgersaantallen bijwerken in Google Sheet ---" >> "$LOG_FILE"
+/usr/bin/python3 systems/update_follower_counts.py >> "$LOG_FILE" 2>&1
+
+echo "" >> "$LOG_FILE"
+echo "--- Stap 6: Posts uploaden naar Google Sheets (goedkeuring) ---" >> "$LOG_FILE"
 /usr/bin/python3 systems/upload_posts_to_sheets.py >> "$LOG_FILE" 2>&1
 
 echo "" >> "$LOG_FILE"
