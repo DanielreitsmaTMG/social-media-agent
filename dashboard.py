@@ -16,9 +16,12 @@ import base64
 import json
 import os
 from datetime import datetime, timedelta
+from urllib.parse import urlparse
 
 import gspread
+import requests
 import streamlit as st
+from bs4 import BeautifulSoup
 from google.oauth2.service_account import Credentials
 from dotenv import load_dotenv
 
@@ -73,6 +76,46 @@ def _format_countdown(delta: timedelta) -> str:
     if days > 0:
         return f"{days}d {hours}u {minutes}m"
     return f"{hours}u {minutes}m"
+
+
+SCRAPE_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    )
+}
+
+
+@st.cache_data(ttl=3600)  # Cache 1 uur — afbeeldingen veranderen zelden
+def get_profile_image(linkedin_url: str, website_url: str) -> str:
+    """Haalt profielfoto op: LinkedIn og:image → website og:image → favicon."""
+
+    def scrape_og_image(url: str) -> str:
+        try:
+            r = requests.get(url, headers=SCRAPE_HEADERS, timeout=8, allow_redirects=True)
+            if r.status_code == 200:
+                soup = BeautifulSoup(r.text, "html.parser")
+                tag = soup.find("meta", property="og:image")
+                if tag and tag.get("content"):
+                    return tag["content"]
+        except Exception:
+            pass
+        return ""
+
+    if linkedin_url:
+        img = scrape_og_image(linkedin_url)
+        if img:
+            return img
+
+    if website_url:
+        img = scrape_og_image(website_url)
+        if img:
+            return img
+        domain = urlparse(website_url).netloc
+        if domain:
+            return f"https://www.google.com/s2/favicons?domain={domain}&sz=128"
+
+    return ""
 
 
 @st.cache_data(ttl=300)  # Cache 5 minuten
@@ -207,7 +250,26 @@ else:
             f"{client['bedrijfsnaam']}  ·  {_platform_summary_text(client)}  ·  {total} posts/week",
             expanded=False,
         ):
-            col_a, col_b = st.columns(2)
+            col_img, col_a, col_b = st.columns([1, 3, 3])
+
+            with col_img:
+                img_url = get_profile_image(
+                    client.get("linkedin_url", ""),
+                    client.get("website_url", ""),
+                )
+                if img_url:
+                    st.markdown(
+                        f'<img src="{img_url}" style="width:90px;height:90px;'
+                        f'object-fit:cover;border-radius:12px;margin-top:4px;">',
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.markdown(
+                        '<div style="width:90px;height:90px;border-radius:12px;'
+                        'background:#eee;display:flex;align-items:center;'
+                        'justify-content:center;font-size:32px;">🏢</div>',
+                        unsafe_allow_html=True,
+                    )
 
             with col_a:
                 st.markdown("**Platformen**")
