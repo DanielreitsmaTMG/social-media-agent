@@ -119,8 +119,16 @@ def get_profile_image(linkedin_url: str, website_url: str) -> str:
     return ""
 
 
+def _extract_handle(url: str) -> str:
+    """Haalt de gebruikersnaam/paginanaam uit een social media URL."""
+    if not url:
+        return ""
+    parts = [p for p in urlparse(url).path.strip("/").split("/") if p]
+    return parts[0] if parts else ""
+
+
 def _fetch_page_text(url: str) -> str:
-    """Haalt beschrijvingstekst op van een URL (og:description of meta description)."""
+    """Haalt og:description of meta description op van een URL."""
     if not url:
         return ""
     try:
@@ -137,42 +145,71 @@ def _fetch_page_text(url: str) -> str:
 
 
 def _parse_follower_count(text: str) -> str:
-    """Extraheert volgersaantal uit tekst, bijv. '12.453 volgers' → '12.453'."""
+    """Extraheert volgersaantal uit tekst."""
     if not text:
         return ""
-    patterns = [
+    for p in [
         r"([\d.,]+[KkMm]?)\s*(?:followers|volgers|abonnees|subscribers)",
         r"([\d.,]+[KkMm]?)\s*(?:likes|vind-ik-leuks|fans)",
-    ]
-    for p in patterns:
+    ]:
         m = re.search(p, text, re.IGNORECASE)
         if m:
             return m.group(1)
     return ""
 
 
+def _socialblade_count(platform: str, handle: str) -> str:
+    """Haalt volgersaantal op via Social Blade als fallback."""
+    if not handle:
+        return ""
+    paths = {"instagram": "instagram/user", "facebook": "facebook/page"}
+    path = paths.get(platform)
+    if not path:
+        return ""
+    try:
+        r = requests.get(
+            f"https://socialblade.com/{path}/{handle}",
+            headers=SCRAPE_HEADERS,
+            timeout=10,
+        )
+        if r.status_code == 200:
+            soup = BeautifulSoup(r.text, "html.parser")
+            # Social Blade zet volgers in een <span> naast het label
+            text = soup.get_text(" ", strip=True)
+            m = re.search(r"([\d,]+)\s*(?:Followers|Subscriber)", text, re.IGNORECASE)
+            if m:
+                # Converteer 1,234 → 1.234 (NL-stijl)
+                return m.group(1).replace(",", ".")
+    except Exception:
+        pass
+    return ""
+
+
 @st.cache_data(ttl=3600)
 def get_follower_counts(instagram_url: str, linkedin_url: str, facebook_url: str) -> dict:
-    """Probeert volgersaantallen te scrapen per platform. Geeft '—' terug bij mislukking."""
+    """Haalt volgersaantallen op: eerst direct, dan via Social Blade."""
     counts = {"instagram": "—", "linkedin": "—", "facebook": "—"}
 
+    # LinkedIn — werkt direct via og:description
     if linkedin_url:
-        text = _fetch_page_text(linkedin_url)
-        count = _parse_follower_count(text)
-        if count:
-            counts["linkedin"] = count
+        count = _parse_follower_count(_fetch_page_text(linkedin_url))
+        counts["linkedin"] = count or "—"
 
+    # Instagram — direct geblokkeerd, gebruik Social Blade
     if instagram_url:
-        text = _fetch_page_text(instagram_url)
-        count = _parse_follower_count(text)
-        if count:
-            counts["instagram"] = count
+        count = _parse_follower_count(_fetch_page_text(instagram_url))
+        if not count:
+            handle = _extract_handle(instagram_url)
+            count = _socialblade_count("instagram", handle)
+        counts["instagram"] = count or "—"
 
+    # Facebook — direct geblokkeerd, gebruik Social Blade
     if facebook_url:
-        text = _fetch_page_text(facebook_url)
-        count = _parse_follower_count(text)
-        if count:
-            counts["facebook"] = count
+        count = _parse_follower_count(_fetch_page_text(facebook_url))
+        if not count:
+            handle = _extract_handle(facebook_url)
+            count = _socialblade_count("facebook", handle)
+        counts["facebook"] = count or "—"
 
     return counts
 
