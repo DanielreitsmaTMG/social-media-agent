@@ -860,23 +860,41 @@ with tab_goedkeuring:
                                     st.session_state[state_key][row_idx] = (new_status, new_note)
                                     st.markdown("<hr style='margin:8px 0;border:none;border-top:1px solid #eee;'>", unsafe_allow_html=True)
 
-                # Actieknoppen
+                        # Opslaan per klant
+                        client_row_indices = {row_idx for row_idx, _ in rows}
+                        client_updates = {
+                            k: v for k, v in st.session_state.get(state_key, {}).items()
+                            if k in client_row_indices
+                        }
+                        col_save_c, col_status_c = st.columns([2, 6])
+                        with col_save_c:
+                            if st.button(
+                                "💾 Opslaan",
+                                key=f"save_{bedrijfsnaam}",
+                                use_container_width=True,
+                                type="primary" if pct < 100 else "secondary",
+                            ):
+                                if client_updates:
+                                    with st.spinner("Opslaan..."):
+                                        save_statuses(spreadsheet_id, selected_tab, client_updates, sa_json)
+                                        load_posts_from_tab.clear()
+                                    st.success(f"✓ {len(client_updates)} posts opgeslagen voor {bedrijfsnaam}")
+                                else:
+                                    st.info("Geen wijzigingen.")
+                        with col_status_c:
+                            if pct == 100:
+                                st.markdown(
+                                    '<span style="color:#22c55e;font-size:13px;font-weight:600;">'
+                                    '✅ Volledig goedgekeurd</span>',
+                                    unsafe_allow_html=True,
+                                )
+
+                # Actieknoppen onderaan (regenereer + export)
                 st.divider()
                 n_rejected  = sum(1 for p in posts if p.get("status") == "afgewezen")
                 n_approved  = sum(1 for p in posts if p.get("status") == "goedgekeurd")
 
-                col_save, col_regen, col_export = st.columns([3, 3, 3])
-
-                with col_save:
-                    if st.button("💾 Wijzigingen opslaan", type="primary", use_container_width=True):
-                        updates = st.session_state.get(state_key, {})
-                        if updates:
-                            with st.spinner("Opslaan..."):
-                                save_statuses(spreadsheet_id, selected_tab, updates, sa_json)
-                                load_posts_from_tab.clear()
-                            st.success(f"{len(updates)} posts opgeslagen.")
-                        else:
-                            st.info("Geen wijzigingen.")
+                col_regen, col_export = st.columns([3, 3])
 
                 with col_regen:
                     regen_disabled = n_rejected == 0
@@ -927,4 +945,4 @@ with tab_goedkeuring:
                             use_container_width=True,
                         )
 
-                st.caption("Opslaan → wijzigingen naar sheet · Regenereer → Claude herschrijft afgewezen posts · Download → zip met goedgekeurde Word-bestanden")
+                st.caption("Regenereer → Claude herschrijft afgewezen posts op basis van de opmerking · Download → zip met goedgekeurde Word-bestanden per klant")
