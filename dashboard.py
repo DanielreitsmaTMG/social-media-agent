@@ -12,6 +12,7 @@ Vereist in .env (of Streamlit Cloud secrets):
     GOOGLE_SHEETS_SPREADSHEET_ID
 """
 
+import base64
 import json
 import os
 from datetime import datetime, timedelta
@@ -70,27 +71,16 @@ def load_clients() -> list[dict]:
         st.error("GOOGLE_SHEETS_SPREADSHEET_ID ontbreekt in secrets.")
         return []
 
-    # Lees service account — TOML-sectie heeft voorkeur, dan JSON-string uit env
+    # Lees service account — base64 string heeft voorkeur (geen TOML-escapingproblemen)
     try:
-        if "gcp_service_account" in st.secrets:
-            s = st.secrets["gcp_service_account"]
-            sa_info = {
-                "type": s["type"],
-                "project_id": s["project_id"],
-                "private_key_id": s["private_key_id"],
-                "private_key": s["private_key"],
-                "client_email": s["client_email"],
-                "client_id": s["client_id"],
-                "auth_uri": s["auth_uri"],
-                "token_uri": s["token_uri"],
-                "auth_provider_x509_cert_url": s["auth_provider_x509_cert_url"],
-                "client_x509_cert_url": s["client_x509_cert_url"],
-                "universe_domain": s.get("universe_domain", "googleapis.com"),
-            }
+        b64 = (os.getenv("GOOGLE_SERVICE_ACCOUNT_B64")
+               or st.secrets.get("GOOGLE_SERVICE_ACCOUNT_B64"))
+        if b64:
+            sa_info = json.loads(base64.b64decode(b64).decode())
         else:
             sa_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
             if not sa_json:
-                st.error("Google service account credentials ontbreken in secrets.")
+                st.error("GOOGLE_SERVICE_ACCOUNT_B64 ontbreekt in secrets.")
                 return []
             sa_info = json.loads(sa_json)
     except Exception as e:
