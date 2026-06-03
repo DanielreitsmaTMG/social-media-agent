@@ -75,6 +75,11 @@ def load_clients() -> list[dict]:
     try:
         b64 = (os.getenv("GOOGLE_SERVICE_ACCOUNT_B64")
                or st.secrets.get("GOOGLE_SERVICE_ACCOUNT_B64"))
+        if not b64:
+            part1 = st.secrets.get("GOOGLE_SA_B64_1", "")
+            part2 = st.secrets.get("GOOGLE_SA_B64_2", "")
+            if part1 and part2:
+                b64 = part1 + part2
         if b64:
             sa_info = json.loads(base64.b64decode(b64).decode())
         else:
