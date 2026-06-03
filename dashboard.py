@@ -70,16 +70,16 @@ def load_clients() -> list[dict]:
         st.error("GOOGLE_SHEETS_SPREADSHEET_ID ontbreekt in secrets.")
         return []
 
-    # Lees service account — eerst als JSON-string, dan als TOML-sectie
+    # Lees service account — TOML-sectie heeft voorkeur, dan JSON-string uit env
     try:
-        sa_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON") or st.secrets.get("GOOGLE_SERVICE_ACCOUNT_JSON")
-        if sa_json:
-            sa_info = json.loads(sa_json)
-        elif "gcp_service_account" in st.secrets:
+        if "gcp_service_account" in st.secrets:
             sa_info = dict(st.secrets["gcp_service_account"])
         else:
-            st.error("Google service account credentials ontbreken in secrets.")
-            return []
+            sa_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
+            if not sa_json:
+                st.error("Google service account credentials ontbreken in secrets.")
+                return []
+            sa_info = json.loads(sa_json)
     except Exception as e:
         st.error(f"Fout bij laden service account: {e}")
         return []
