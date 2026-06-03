@@ -27,6 +27,10 @@ echo "--- Stap 4: Word-documenten opslaan ---" >> "$LOG_FILE"
 /usr/bin/python3 systems/save_local_docs.py >> "$LOG_FILE" 2>&1
 
 echo "" >> "$LOG_FILE"
+echo "--- Stap 5: Posts uploaden naar Google Sheets (goedkeuring) ---" >> "$LOG_FILE"
+/usr/bin/python3 systems/upload_posts_to_sheets.py >> "$LOG_FILE" 2>&1
+
+echo "" >> "$LOG_FILE"
 echo "======================================" >> "$LOG_FILE"
 echo "Pipeline klaar: $(date)" >> "$LOG_FILE"
 echo "======================================" >> "$LOG_FILE"

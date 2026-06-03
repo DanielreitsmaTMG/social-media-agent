@@ -23,6 +23,7 @@ import gspread
 import requests
 import streamlit as st
 from bs4 import BeautifulSoup
+from google.oauth2.service_account import Credentials as WriteCredentials
 from google.oauth2.service_account import Credentials
 from dotenv import load_dotenv
 
@@ -417,16 +418,18 @@ with col3:
 
 st.divider()
 
-# Klantenoverzicht
-st.subheader("Actieve klanten")
+tab_klanten, tab_goedkeuring = st.tabs(["📋 Klanten", "✅ Goedkeuring"])
 
-if not clients:
-    st.warning("Geen klanten gevonden. Controleer de Google Sheet en credentials.")
-else:
-    # Zoekfilter
-    search = st.text_input("Zoek op klantnaam", placeholder="Typ een naam...")
-    if search:
-        clients = [c for c in clients if search.lower() in c.get("bedrijfsnaam", "").lower()]
+with tab_klanten:
+    st.subheader("Actieve klanten")
+
+    if not clients:
+        st.warning("Geen klanten gevonden. Controleer de Google Sheet en credentials.")
+    else:
+        # Zoekfilter
+        search = st.text_input("Zoek op klantnaam", placeholder="Typ een naam...")
+        if search:
+            clients = [c for c in clients if search.lower() in c.get("bedrijfsnaam", "").lower()]
 
     # Klantenkaarten
     for client in clients:
@@ -527,3 +530,199 @@ else:
                         st.markdown(f"[{lbl}]({url})")
 
     st.caption(f"Gegevens worden elke 5 minuten vernieuwd · Laatste update: {datetime.now().strftime('%H:%M:%S')}")
+
+# ── Goedkeuring tab ───────────────────────────────────────────────────────────
+
+WRITE_SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive",
+]
+
+STATUS_OPTIONS  = ["concept", "goedgekeurd", "afgewezen"]
+STATUS_COLORS   = {"concept": "#f59e0b", "goedgekeurd": "#22c55e", "afgewezen": "#ef4444"}
+STATUS_LABELS   = {"concept": "⏳ Concept", "goedgekeurd": "✅ Goedgekeurd", "afgewezen": "❌ Afgewezen"}
+
+
+def _get_write_client(sa_info: dict):
+    creds = WriteCredentials.from_service_account_info(sa_info, scopes=WRITE_SCOPES)
+    return gspread.authorize(creds)
+
+
+@st.cache_data(ttl=60)
+def load_post_tabs(spreadsheet_id: str, sa_info_json: str) -> list[str]:
+    """Geeft alle tabbladen terug die beginnen met 'Posts_'."""
+    sa_info = json.loads(sa_info_json)
+    gc = _get_write_client(sa_info)
+    spreadsheet = gc.open_by_key(spreadsheet_id)
+    return sorted(
+        [ws.title for ws in spreadsheet.worksheets() if ws.title.startswith("Posts_")],
+        reverse=True,
+    )
+
+
+@st.cache_data(ttl=30)
+def load_posts_from_tab(spreadsheet_id: str, tab_name: str, sa_info_json: str) -> list[dict]:
+    """Laadt alle posts uit een specifiek tabblad."""
+    sa_info = json.loads(sa_info_json)
+    gc = _get_write_client(sa_info)
+    worksheet = gc.open_by_key(spreadsheet_id).worksheet(tab_name)
+    return worksheet.get_all_records(default_blank="")
+
+
+def save_statuses(spreadsheet_id: str, tab_name: str, updates: dict, sa_info_json: str):
+    """Schrijft statuswijzigingen terug naar het tabblad. updates = {row_index: (status, opmerking)}"""
+    sa_info = json.loads(sa_info_json)
+    gc = _get_write_client(sa_info)
+    worksheet = gc.open_by_key(spreadsheet_id).worksheet(tab_name)
+    batch = []
+    for row_idx, (status, opmerking) in updates.items():
+        batch.append({"range": f"H{row_idx}:I{row_idx}", "values": [[status, opmerking]]})
+    worksheet.batch_update(batch, value_input_option="RAW")
+
+
+def _sa_info_json() -> str | None:
+    b64 = os.getenv("GOOGLE_SERVICE_ACCOUNT_B64") or st.secrets.get("GOOGLE_SERVICE_ACCOUNT_B64")
+    if not b64:
+        p1 = st.secrets.get("GOOGLE_SA_B64_1", "")
+        p2 = st.secrets.get("GOOGLE_SA_B64_2", "")
+        b64 = p1 + p2 if p1 and p2 else None
+    if b64:
+        return json.dumps(json.loads(base64.b64decode(b64).decode()))
+    sa = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
+    return sa if sa else None
+
+
+with tab_goedkeuring:
+    st.subheader("Posts goedkeuren per week")
+
+    spreadsheet_id = os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID") or st.secrets.get("GOOGLE_SHEETS_SPREADSHEET_ID")
+    sa_json = _sa_info_json()
+
+    if not spreadsheet_id or not sa_json:
+        st.error("Credentials ontbreken.")
+    else:
+        tabs = load_post_tabs(spreadsheet_id, sa_json)
+
+        if not tabs:
+            st.info("Nog geen posts beschikbaar. Voer eerst de pipeline uit zodat posts naar Google Sheets worden geüpload.")
+        else:
+            # Weekkiezer
+            selected_tab = st.selectbox(
+                "Selecteer een week",
+                tabs,
+                format_func=lambda t: t.replace("Posts_", "").replace("_W", " · Week "),
+            )
+
+            posts = load_posts_from_tab(spreadsheet_id, selected_tab, sa_json)
+
+            if not posts:
+                st.warning("Geen posts gevonden in dit tabblad.")
+            else:
+                # Voortgangsoverzicht
+                total   = len(posts)
+                approved = sum(1 for p in posts if p.get("status") == "goedgekeurd")
+                rejected = sum(1 for p in posts if p.get("status") == "afgewezen")
+                pending  = total - approved - rejected
+
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Totaal posts", total)
+                c2.metric("✅ Goedgekeurd", approved)
+                c3.metric("❌ Afgewezen", rejected)
+                c4.metric("⏳ Concept", pending)
+
+                st.divider()
+
+                # Groepeer per klant
+                clients_in_week = {}
+                for i, post in enumerate(posts, start=2):  # rij 2 = eerste datarij
+                    name = post.get("bedrijfsnaam", "Onbekend")
+                    if name not in clients_in_week:
+                        clients_in_week[name] = []
+                    clients_in_week[name].append((i, post))
+
+                # Session state voor wijzigingen
+                state_key = f"updates_{selected_tab}"
+                if state_key not in st.session_state:
+                    st.session_state[state_key] = {}
+
+                for bedrijfsnaam, rows in clients_in_week.items():
+                    statuses = [r[1].get("status", "concept") for r in rows]
+                    all_ok   = all(s == "goedgekeurd" for s in statuses)
+                    any_rej  = any(s == "afgewezen" for s in statuses)
+                    badge    = "✅" if all_ok else ("❌" if any_rej else "⏳")
+
+                    with st.expander(f"{badge} {bedrijfsnaam} — {len(rows)} posts", expanded=not all_ok):
+                        for platform in ("instagram", "linkedin", "facebook"):
+                            platform_rows = [(i, p) for i, p in rows if p.get("platform") == platform]
+                            if not platform_rows:
+                                continue
+
+                            color = PLATFORM_COLORS[platform]
+                            icon  = PLATFORM_ICON_HTML[platform]
+                            st.markdown(
+                                f'<p style="font-weight:700;color:{color};margin:12px 0 6px 0;">'
+                                f'{icon}{PLATFORM_LABELS[platform]}</p>',
+                                unsafe_allow_html=True,
+                            )
+
+                            for row_idx, post in platform_rows:
+                                dag   = post.get("dag", "")
+                                datum = post.get("publicatiedatum", "")
+                                current_status = st.session_state[state_key].get(
+                                    row_idx, (post.get("status", "concept"), post.get("opmerkingen", ""))
+                                )[0]
+
+                                with st.container():
+                                    st.markdown(
+                                        f'<p style="font-weight:600;margin:8px 0 2px 0;">📅 {dag} — {datum}</p>',
+                                        unsafe_allow_html=True,
+                                    )
+                                    st.markdown(
+                                        f'<div style="background:#f8f8f8;border-left:3px solid {color};'
+                                        f'padding:10px 14px;border-radius:0 8px 8px 0;'
+                                        f'font-size:14px;margin-bottom:4px;white-space:pre-wrap;">'
+                                        f'{post.get("caption","")}</div>',
+                                        unsafe_allow_html=True,
+                                    )
+                                    st.caption(post.get("hashtags", ""))
+
+                                    col_s, col_o = st.columns([2, 4])
+                                    with col_s:
+                                        new_status = st.selectbox(
+                                            "Status",
+                                            STATUS_OPTIONS,
+                                            index=STATUS_OPTIONS.index(current_status),
+                                            key=f"status_{row_idx}",
+                                            label_visibility="collapsed",
+                                        )
+                                    with col_o:
+                                        current_note = st.session_state[state_key].get(
+                                            row_idx, (post.get("status", "concept"), post.get("opmerkingen", ""))
+                                        )[1]
+                                        new_note = st.text_input(
+                                            "Opmerking",
+                                            value=current_note,
+                                            placeholder="Optionele opmerking...",
+                                            key=f"note_{row_idx}",
+                                            label_visibility="collapsed",
+                                        )
+
+                                    # Sla lokaal op in session state
+                                    st.session_state[state_key][row_idx] = (new_status, new_note)
+                                    st.markdown("<hr style='margin:8px 0;border:none;border-top:1px solid #eee;'>", unsafe_allow_html=True)
+
+                # Opslaan knop
+                st.divider()
+                col_btn, col_info = st.columns([2, 8])
+                with col_btn:
+                    if st.button("💾 Wijzigingen opslaan", type="primary", use_container_width=True):
+                        updates = st.session_state.get(state_key, {})
+                        if updates:
+                            with st.spinner("Opslaan..."):
+                                save_statuses(spreadsheet_id, selected_tab, updates, sa_json)
+                                load_posts_from_tab.clear()
+                            st.success(f"{len(updates)} posts opgeslagen in Google Sheets.")
+                        else:
+                            st.info("Geen wijzigingen om op te slaan.")
+                with col_info:
+                    st.caption("Wijzigingen worden direct opgeslagen in het Google Sheets-tabblad.")
