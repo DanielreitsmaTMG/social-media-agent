@@ -129,6 +129,14 @@ def _total_posts_pw(client: dict) -> int:
 st.title("📱 Social Media Agent")
 st.caption("Live overzicht van actieve klanten en geplande contentruns")
 
+# Tijdelijke debug — wordt verwijderd zodra verbinding werkt
+with st.expander("🔧 Debug: beschikbare secrets"):
+    try:
+        keys = list(st.secrets.keys())
+        st.write("Gevonden secret-keys:", keys)
+    except Exception as e:
+        st.write("Geen secrets gevonden:", e)
+
 st.divider()
 
 # Volgende run
