@@ -821,7 +821,7 @@ with tab_goedkeuring:
                         f"{n_approved}/{n_total} goedgekeurd"
                     )
 
-                    with st.expander(expander_label, expanded=(is_urgent and pct < 100)):
+                    with st.expander(expander_label, expanded=False):
                         # Voortgangsbalk per klant
                         st.markdown(
                             f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">'
@@ -850,12 +850,10 @@ with tab_goedkeuring:
                             for row_idx, post in platform_rows:
                                 dag    = post.get("dag", "")
                                 datum  = post.get("publicatiedatum", "")
-                                stored = cur_updates.get(
-                                    row_idx,
-                                    (post.get("status", "concept"), post.get("opmerkingen", ""))
-                                )
-                                current_status = stored[0]
-                                current_note   = stored[1]
+                                status = post.get("status", "concept")
+                                note   = post.get("opmerkingen", "")
+                                s_color = STATUS_COLORS.get(status, "#666")
+                                s_label = STATUS_LABELS.get(status, status)
 
                                 with st.container():
                                     col_post, col_ctrl = st.columns([5, 3])
@@ -874,58 +872,57 @@ with tab_goedkeuring:
                                         )
 
                                     with col_ctrl:
-                                        new_status = st.segmented_control(
-                                            "Status",
-                                            options=STATUS_OPTIONS,
-                                            default=current_status,
-                                            key=f"status_{row_idx}",
-                                            label_visibility="collapsed",
-                                            format_func=lambda s: {
-                                                "concept": "⏳",
-                                                "goedgekeurd": "✅",
-                                                "afgewezen": "❌",
-                                            }.get(s, s),
-                                        ) or current_status
+                                        # Status badge
+                                        st.markdown(
+                                            f'<div style="text-align:center;padding:3px 8px;'
+                                            f'background:{s_color}18;border:1px solid {s_color};'
+                                            f'border-radius:8px;font-size:12px;font-weight:700;'
+                                            f'color:{s_color};margin-bottom:8px;">{s_label}</div>',
+                                            unsafe_allow_html=True,
+                                        )
 
-                                        new_note = ""
-                                        if new_status == "afgewezen":
+                                        # Directe actieknoppen — auto-save op klik
+                                        col_ok, col_rej = st.columns(2)
+                                        with col_ok:
+                                            if st.button("✅", key=f"approve_{row_idx}",
+                                                         use_container_width=True, help="Goedkeuren"):
+                                                save_statuses(spreadsheet_id, selected_tab,
+                                                              {row_idx: ("goedgekeurd", "")}, sa_json)
+                                                load_posts_from_tab.clear()
+                                                st.rerun()
+                                        with col_rej:
+                                            if st.button("❌", key=f"reject_{row_idx}",
+                                                         use_container_width=True, help="Afwijzen"):
+                                                save_statuses(spreadsheet_id, selected_tab,
+                                                              {row_idx: ("afgewezen", note)}, sa_json)
+                                                load_posts_from_tab.clear()
+                                                st.rerun()
+
+                                        # Redenenveld bij afwijzing
+                                        if status == "afgewezen":
                                             new_note = st.text_input(
                                                 "Reden",
-                                                value=current_note,
-                                                placeholder="Wat moet er anders?",
+                                                value=note,
                                                 key=f"note_{row_idx}",
+                                                placeholder="Wat moet er anders?",
                                                 label_visibility="collapsed",
                                             )
+                                            if st.button("Reden opslaan", key=f"note_save_{row_idx}",
+                                                         use_container_width=True):
+                                                save_statuses(spreadsheet_id, selected_tab,
+                                                              {row_idx: ("afgewezen", new_note)}, sa_json)
+                                                load_posts_from_tab.clear()
+                                                st.rerun()
 
-                                    cur_updates[row_idx] = (new_status, new_note)
-                                    st.markdown("<hr style='margin:6px 0;border:none;border-top:1px solid #eee;'>", unsafe_allow_html=True)
+                                    st.markdown("<hr style='margin:6px 0;border:none;border-top:1px solid #eee;'>",
+                                                unsafe_allow_html=True)
 
                         # Knoppen per klant
-                        client_row_indices = {row_idx for row_idx, _ in rows}
-                        client_updates     = {
-                            k: v for k, v in st.session_state.get(state_key, {}).items()
-                            if k in client_row_indices
-                        }
-                        client_posts       = [p for _, p in rows]
-                        n_rej_client       = sum(1 for p in client_posts if p.get("status") == "afgewezen")
-                        n_app_client       = sum(1 for p in client_posts if p.get("status") == "goedgekeurd")
+                        client_posts = [p for _, p in rows]
+                        n_rej_client = sum(1 for p in client_posts if p.get("status") == "afgewezen")
+                        n_app_client = sum(1 for p in client_posts if p.get("status") == "goedgekeurd")
 
-                        col_save_c, col_regen_c, col_export_c, col_status_c = st.columns([2, 2, 2, 4])
-
-                        with col_save_c:
-                            if st.button(
-                                "💾 Opslaan",
-                                key=f"save_{bedrijfsnaam}",
-                                use_container_width=True,
-                                type="primary" if pct < 100 else "secondary",
-                            ):
-                                if client_updates:
-                                    with st.spinner("Opslaan..."):
-                                        save_statuses(spreadsheet_id, selected_tab, client_updates, sa_json)
-                                        load_posts_from_tab.clear()
-                                    st.success(f"✓ {len(client_updates)} posts opgeslagen")
-                                else:
-                                    st.info("Geen wijzigingen.")
+                        col_regen_c, col_export_c, col_status_c = st.columns([2, 2, 4])
 
                         with col_regen_c:
                             if st.button(
