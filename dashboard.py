@@ -35,8 +35,8 @@ load_dotenv(override=True)
 # ── Paginaconfiguratie ────────────────────────────────────────────────────────
 
 st.set_page_config(
-    page_title="Social Media Agent",
-    page_icon="📱",
+    page_title="Pulse · Content Studio — TopMediaGroep",
+    page_icon="✨",
     layout="wide",
 )
 
@@ -197,100 +197,293 @@ def _total_posts_pw(client: dict) -> int:
     return sum(client.get(f"{p}_posts_pw", 0) for p in ("instagram", "linkedin", "facebook"))
 
 
-# ── Globale CSS ───────────────────────────────────────────────────────────────
+# ── Merk & design system ──────────────────────────────────────────────────────
+#
+# "Pulse" — het content-cockpit van TopMediaGroep.
+# Eén consistente kleuren-, typografie- en componentenset zodat de tool oogt
+# als een afgewerkt product i.p.v. een intern script.
 
-st.markdown("""
+BRAND = {
+    "primary":      "#4F46E5",   # indigo — hoofdkleur van het merk
+    "primary_dark": "#3730A3",
+    "primary_soft": "#EEF2FF",
+    "accent":       "#F97316",   # warm oranje accent
+    "success":      "#16A34A",
+    "warning":      "#F59E0B",
+    "danger":       "#DC2626",
+    "ink":          "#111827",   # primaire tekstkleur
+    "ink_soft":     "#6B7280",   # secundaire tekstkleur
+    "line":         "#E5E7EB",   # randen
+    "surface":      "#FFFFFF",   # kaarten
+    "canvas":       "#F7F8FB",   # paginabackground
+}
+
+st.markdown(f"""
 <style>
-/* Card-stijl voor elke klant */
-.client-card {
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+:root {{
+    --brand-primary: {BRAND['primary']};
+    --brand-primary-dark: {BRAND['primary_dark']};
+    --brand-primary-soft: {BRAND['primary_soft']};
+    --brand-accent: {BRAND['accent']};
+    --brand-success: {BRAND['success']};
+    --brand-warning: {BRAND['warning']};
+    --brand-danger: {BRAND['danger']};
+    --brand-ink: {BRAND['ink']};
+    --brand-ink-soft: {BRAND['ink_soft']};
+    --brand-line: {BRAND['line']};
+    --brand-surface: {BRAND['surface']};
+    --brand-canvas: {BRAND['canvas']};
+}}
+
+/* ── Basistypografie ───────────────────────────────────────────────────── */
+html, body, [class^="css"], [class*=" css"], .stApp, .stMarkdown, p, span, div, label {{
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif !important;
+}}
+.stApp {{
+    background: var(--brand-canvas);
+}}
+h1, h2, h3, h4 {{
+    font-family: 'Plus Jakarta Sans', sans-serif !important;
+    font-weight: 800 !important;
+    color: var(--brand-ink) !important;
+    letter-spacing: -0.02em;
+}}
+p, .stMarkdown, .stCaption, label {{
+    color: var(--brand-ink);
+}}
+
+/* ── Streamlit-chrome verbergen voor een productgevoel ─────────────────── */
+#MainMenu, footer, header[data-testid="stHeader"] {{ visibility: hidden; height: 0; }}
+.block-container {{ padding-top: 1.6rem; max-width: 1280px; }}
+
+/* ── Merk-header (Pulse wordmark) ──────────────────────────────────────── */
+.pulse-header {{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+}}
+.pulse-brand {{
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}}
+.pulse-logo {{
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, var(--brand-primary), var(--brand-accent));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    box-shadow: 0 6px 16px rgba(79,70,229,.28);
+}}
+.pulse-titles {{ line-height: 1.15; }}
+.pulse-name {{
+    font-size: 22px;
+    font-weight: 800;
+    color: var(--brand-ink);
+    letter-spacing: -0.02em;
+}}
+.pulse-sub {{
+    font-size: 13px;
+    color: var(--brand-ink-soft);
+    font-weight: 500;
+}}
+.pulse-pill {{
+    background: var(--brand-primary-soft);
+    color: var(--brand-primary-dark);
+    font-size: 12px;
+    font-weight: 700;
+    padding: 6px 14px;
+    border-radius: 99px;
+    letter-spacing: .02em;
+}}
+
+/* ── KPI / metric-kaarten ──────────────────────────────────────────────── */
+[data-testid="stMetric"] {{
+    background: var(--brand-surface);
+    border: 1px solid var(--brand-line);
+    border-radius: 16px;
+    padding: 16px 20px;
+    box-shadow: 0 1px 2px rgba(16,24,40,.04);
+}}
+[data-testid="stMetricLabel"] {{
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    color: var(--brand-ink-soft) !important;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+}}
+[data-testid="stMetricValue"] {{
+    font-size: 22px !important;
+    font-weight: 800 !important;
+    color: var(--brand-ink) !important;
+}}
+
+/* ── Tabs ──────────────────────────────────────────────────────────────── */
+.stTabs [data-baseweb="tab-list"] {{
+    gap: 6px;
+    border-bottom: 1px solid var(--brand-line);
+}}
+.stTabs [data-baseweb="tab"] {{
+    height: 42px;
+    border-radius: 10px 10px 0 0;
+    padding: 0 18px;
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--brand-ink-soft);
+    background: transparent;
+}}
+.stTabs [aria-selected="true"] {{
+    color: var(--brand-primary) !important;
+    background: var(--brand-primary-soft) !important;
+    border-bottom: 3px solid var(--brand-primary) !important;
+}}
+
+/* ── Knoppen ───────────────────────────────────────────────────────────── */
+.stButton > button, .stDownloadButton > button, .stLinkButton > a {{
+    border-radius: 10px !important;
+    font-weight: 700 !important;
+    border: 1px solid var(--brand-line) !important;
+    transition: all .12s ease;
+}}
+.stButton > button[kind="primary"], .stDownloadButton > button[kind="primary"] {{
+    background: var(--brand-primary) !important;
+    border-color: var(--brand-primary) !important;
+    box-shadow: 0 4px 12px rgba(79,70,229,.25);
+}}
+.stButton > button:hover, .stDownloadButton > button:hover {{
+    border-color: var(--brand-primary) !important;
+    color: var(--brand-primary) !important;
+}}
+
+/* ── Inputs ────────────────────────────────────────────────────────────── */
+.stTextInput input, .stSelectbox div[data-baseweb="select"] > div, .stTextArea textarea {{
+    border-radius: 10px !important;
+    border-color: var(--brand-line) !important;
+}}
+.stTextInput input:focus, .stTextArea textarea:focus {{
+    border-color: var(--brand-primary) !important;
+    box-shadow: 0 0 0 1px var(--brand-primary) !important;
+}}
+
+/* ── Expanders ─────────────────────────────────────────────────────────── */
+[data-testid="stExpander"] {{
+    border: 1px solid var(--brand-line) !important;
+    border-radius: 14px !important;
+    background: var(--brand-surface);
+    box-shadow: 0 1px 2px rgba(16,24,40,.04);
+}}
+
+/* ── Card-stijl voor elke klant ────────────────────────────────────────── */
+.client-card {{
     display: flex;
     align-items: stretch;
-    border: 1px solid #e4e4e7;
-    border-radius: 12px;
+    border: 1px solid var(--brand-line);
+    border-radius: 16px;
     margin-bottom: 10px;
     overflow: hidden;
-    background: #ffffff;
-    box-shadow: 0 1px 3px rgba(0,0,0,.06);
-    transition: box-shadow .15s;
-}
-.client-card:hover {
-    box-shadow: 0 3px 10px rgba(0,0,0,.1);
-}
+    background: var(--brand-surface);
+    box-shadow: 0 1px 3px rgba(16,24,40,.05);
+    transition: box-shadow .15s, transform .15s;
+}}
+.client-card:hover {{
+    box-shadow: 0 8px 24px rgba(16,24,40,.08);
+    transform: translateY(-1px);
+}}
 
 /* Logo-blok links */
-.client-logo-block {
-    width: 64px;
-    min-width: 64px;
+.client-logo-block {{
+    width: 68px;
+    min-width: 68px;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #f4f4f5;
-    border-right: 1px solid #e4e4e7;
+    background: var(--brand-primary-soft);
+    border-right: 1px solid var(--brand-line);
     padding: 12px 8px;
-}
-.client-logo-block img {
+}}
+.client-logo-block img {{
     width: 44px;
     height: 44px;
-    border-radius: 8px;
+    border-radius: 10px;
     object-fit: cover;
-}
-.client-logo-placeholder {
+}}
+.client-logo-placeholder {{
     width: 44px;
     height: 44px;
-    border-radius: 8px;
-    background: #d4d4d8;
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--brand-primary), var(--brand-accent));
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 22px;
-}
+    font-size: 20px;
+}}
 
 /* Koptekst rechts van het logo */
-.client-header-content {
+.client-header-content {{
     flex: 1;
-    padding: 14px 16px;
+    padding: 14px 18px;
     display: flex;
     flex-direction: column;
     justify-content: center;
     gap: 4px;
-}
-.client-name {
+}}
+.client-name {{
     font-size: 15px;
-    font-weight: 700;
-    color: #18181b;
+    font-weight: 800;
+    color: var(--brand-ink);
     line-height: 1.2;
-}
-.client-meta {
+    letter-spacing: -0.01em;
+}}
+.client-meta {{
     font-size: 13px;
-    color: #71717a;
+    color: var(--brand-ink-soft);
     display: flex;
     align-items: center;
     gap: 12px;
     flex-wrap: wrap;
-}
-.client-meta img {
+}}
+.client-meta img {{
     vertical-align: middle;
     margin-right: 3px;
-}
+}}
 
 /* Verberg de Streamlit expander-knop stijl binnen kaarten */
-.card-expander [data-testid="stExpander"] {
+.card-expander [data-testid="stExpander"] {{
     border: none !important;
     box-shadow: none !important;
     border-radius: 0 !important;
-}
-.card-expander [data-testid="stExpander"] summary {
+}}
+.card-expander [data-testid="stExpander"] summary {{
     padding: 14px 16px !important;
     border-bottom: 1px solid #f0f0f0;
-}
+}}
 </style>
 """, unsafe_allow_html=True)
 
-# ── Layout ────────────────────────────────────────────────────────────────────
+# ── Merk-header ───────────────────────────────────────────────────────────────
 
-st.title("📱 Social Media Agent")
-st.caption("Live overzicht van actieve klanten en geplande contentruns")
-
+st.markdown(
+    """
+    <div class="pulse-header">
+        <div class="pulse-brand">
+            <div class="pulse-logo">✨</div>
+            <div class="pulse-titles">
+                <div class="pulse-name">Pulse</div>
+                <div class="pulse-sub">Content Studio · TopMediaGroep</div>
+            </div>
+        </div>
+        <div class="pulse-pill">Live overzicht</div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+st.caption("Volg, beoordeel en verstuur social media content voor al je klanten — op één plek.")
 
 st.divider()
 
