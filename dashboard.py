@@ -90,36 +90,12 @@ SCRAPE_HEADERS = {
 }
 
 
-@st.cache_data(ttl=3600)  # Cache 1 uur — afbeeldingen veranderen zelden
-def get_profile_image(linkedin_url: str, website_url: str) -> str:
-    """Haalt profielfoto op: LinkedIn og:image → website og:image → favicon."""
-
-    def scrape_og_image(url: str) -> str:
-        try:
-            r = requests.get(url, headers=SCRAPE_HEADERS, timeout=8, allow_redirects=True)
-            if r.status_code == 200:
-                soup = BeautifulSoup(r.text, "html.parser")
-                tag = soup.find("meta", property="og:image")
-                if tag and tag.get("content"):
-                    return tag["content"]
-        except Exception:
-            pass
+def get_profile_image(website_url: str) -> str:
+    """Geeft Google favicon-URL terug — geen scraping, altijd instant."""
+    if not website_url:
         return ""
-
-    if linkedin_url:
-        img = scrape_og_image(linkedin_url)
-        if img:
-            return img
-
-    if website_url:
-        img = scrape_og_image(website_url)
-        if img:
-            return img
-        domain = urlparse(website_url).netloc
-        if domain:
-            return f"https://www.google.com/s2/favicons?domain={domain}&sz=128"
-
-    return ""
+    domain = urlparse(website_url).netloc
+    return f"https://www.google.com/s2/favicons?domain={domain}&sz=128" if domain else ""
 
 
 def _extract_handle(url: str) -> str:
@@ -359,10 +335,7 @@ with tab_klanten:
     for client in clients:
         total     = _total_posts_pw(client)
         klant_id  = client.get("klant_id", client["bedrijfsnaam"])
-        img_url   = get_profile_image(
-            client.get("linkedin_url", ""),
-            client.get("website_url", ""),
-        )
+        img_url   = get_profile_image(client.get("website_url", ""))
         followers = _client_follower_counts(client)
 
         # Bouw platform-badges voor de header
@@ -468,11 +441,16 @@ def _get_write_client(sa_info: dict):
     return gspread.authorize(creds)
 
 
+def _get_read_client(sa_info: dict):
+    creds = Credentials.from_service_account_info(sa_info, scopes=SCOPES)
+    return gspread.authorize(creds)
+
+
 @st.cache_data(ttl=60)
 def load_post_tabs(spreadsheet_id: str, sa_info_json: str) -> list[str]:
     """Geeft alle tabbladen terug die beginnen met 'Posts_'."""
     sa_info = json.loads(sa_info_json)
-    gc = _get_write_client(sa_info)
+    gc = _get_read_client(sa_info)
     spreadsheet = gc.open_by_key(spreadsheet_id)
     return sorted(
         [ws.title for ws in spreadsheet.worksheets() if ws.title.startswith("Posts_")],
@@ -484,7 +462,7 @@ def load_post_tabs(spreadsheet_id: str, sa_info_json: str) -> list[str]:
 def load_posts_from_tab(spreadsheet_id: str, tab_name: str, sa_info_json: str) -> list[dict]:
     """Laadt alle posts uit een specifiek tabblad."""
     sa_info = json.loads(sa_info_json)
-    gc = _get_write_client(sa_info)
+    gc = _get_read_client(sa_info)
     worksheet = gc.open_by_key(spreadsheet_id).worksheet(tab_name)
     return worksheet.get_all_records(default_blank="")
 
@@ -682,6 +660,264 @@ def _sa_info_json() -> str | None:
     return sa if sa else None
 
 
+@st.fragment
+def render_approval_interface(spreadsheet_id, sa_json):
+    # ── Week selector ─────────────────────────────────────────────────────────
+    tabs = load_post_tabs(spreadsheet_id, sa_json)
+    if not tabs:
+        st.info("Nog geen posts beschikbaar. Voer eerst de pipeline uit.")
+        return
+
+    selected_tab = st.selectbox(
+        "Selecteer een week",
+        tabs,
+        format_func=lambda t: t.replace("Posts_", "").replace("_W", " · Week "),
+    )
+
+    posts = load_posts_from_tab(spreadsheet_id, selected_tab, sa_json)
+    if not posts:
+        st.warning("Geen posts gevonden in dit tabblad.")
+        return
+
+    # ── Groepeer per klant ────────────────────────────────────────────────────
+    clients_in_week: dict[str, list] = {}
+    for i, post in enumerate(posts, start=2):
+        name = post.get("bedrijfsnaam", "Onbekend")
+        clients_in_week.setdefault(name, []).append((i, post))
+
+    # ── Session state voor lokale statuswijzigingen ───────────────────────────
+    state_key = f"updates_{selected_tab}"
+    if state_key not in st.session_state:
+        st.session_state[state_key] = {}
+    cur_updates = st.session_state[state_key]
+
+    def _eff(row_idx, post):
+        ov = cur_updates.get(row_idx)
+        return ov[0] if ov else post.get("status", "concept")
+
+    def _note_val(row_idx, post):
+        ov = cur_updates.get(row_idx)
+        return ov[1] if ov else post.get("opmerkingen", "")
+
+    def _progress(rows):
+        statuses = [_eff(ri, p) for ri, p in rows]
+        approved = sum(1 for s in statuses if s == "goedgekeurd")
+        if approved == len(statuses):
+            return 100, "Klaar", "#22c55e"
+        elif any(s != "concept" for s in statuses):
+            return 66, "In review", "#f59e0b"
+        return 0, "Niet gestart", "#ef4444"
+
+    # ── Urgentie ──────────────────────────────────────────────────────────────
+    is_urgent = datetime.now().weekday() in (3, 4)
+
+    # ── Metrics ───────────────────────────────────────────────────────────────
+    total_posts  = len(posts)
+    approved_all = sum(_eff(i + 2, p) == "goedgekeurd" for i, p in enumerate(posts))
+    rejected_all = sum(_eff(i + 2, p) == "afgewezen"   for i, p in enumerate(posts))
+    pending_all  = total_posts - approved_all - rejected_all
+    done_clients = sum(1 for rows in clients_in_week.values() if _progress(rows)[0] == 100)
+
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Klanten klaar", f"{done_clients}/{len(clients_in_week)}")
+    c2.metric("Posts totaal", total_posts)
+    c3.metric("✅ Goedgekeurd", approved_all)
+    c4.metric("❌ Afgewezen", rejected_all)
+    c5.metric("⏳ Concept", pending_all)
+
+    overall_pct = int(approved_all / total_posts * 100) if total_posts else 0
+    st.markdown(
+        f'<div style="background:#e5e7eb;border-radius:99px;height:8px;margin:8px 0 16px 0;">'
+        f'<div style="background:#22c55e;width:{overall_pct}%;height:8px;border-radius:99px;"></div></div>'
+        f'<p style="font-size:12px;color:#666;margin-top:-8px;">{overall_pct}% van alle posts goedgekeurd</p>',
+        unsafe_allow_html=True,
+    )
+
+    # ── Urgentie-banner ───────────────────────────────────────────────────────
+    if is_urgent:
+        incomplete = [n for n, rows in clients_in_week.items() if _progress(rows)[0] < 100]
+        if incomplete:
+            clr = "#ef4444" if datetime.now().weekday() == 4 else "#f59e0b"
+            dag = "vrijdag" if datetime.now().weekday() == 4 else "donderdag"
+            st.markdown(
+                f'<div style="background:{clr}18;border:1.5px solid {clr};border-radius:10px;'
+                f'padding:12px 16px;margin-bottom:12px;">'
+                f'<span style="font-weight:700;color:{clr};">⚠️ Het is {dag} — '
+                f'{len(incomplete)} klant{"en" if len(incomplete)>1 else ""} nog niet klaar.</span></div>',
+                unsafe_allow_html=True,
+            )
+
+    st.divider()
+
+    # ── Layout: navigator links, review rechts ────────────────────────────────
+    sorted_names = sorted(
+        clients_in_week,
+        key=lambda n: (_progress(clients_in_week[n])[0], n),
+    )
+
+    col_nav, col_review = st.columns([1, 3], gap="large")
+
+    with col_nav:
+        st.markdown("**Klanten**")
+        selected_client = st.radio(
+            "Klant",
+            sorted_names,
+            format_func=lambda n: (
+                f"✅ {n}" if _progress(clients_in_week[n])[0] == 100
+                else f"{'🔴' if is_urgent else '⏳'} {n}"
+            ),
+            label_visibility="collapsed",
+        )
+
+    with col_review:
+        rows       = clients_in_week[selected_client]
+        client_dict = load_client_dict(spreadsheet_id, sa_json)
+        pct, pct_label, pct_color = _progress(rows)
+        n_app = sum(1 for ri, p in rows if _eff(ri, p) == "goedgekeurd")
+        n_rej = sum(1 for ri, p in rows if _eff(ri, p) == "afgewezen")
+
+        # Klant-header
+        st.markdown(
+            f'<div style="margin-bottom:14px;">'
+            f'<div style="font-size:20px;font-weight:700;color:#18181b;">{selected_client}</div>'
+            f'<div style="display:flex;align-items:center;gap:10px;margin-top:6px;">'
+            f'<div style="flex:1;background:#e5e7eb;border-radius:99px;height:5px;">'
+            f'<div style="background:{pct_color};width:{pct}%;height:5px;border-radius:99px;"></div></div>'
+            f'<span style="font-size:12px;font-weight:700;color:{pct_color};">'
+            f'{n_app}/{len(rows)} goedgekeurd · {pct_label}</span></div></div>',
+            unsafe_allow_html=True,
+        )
+
+        # ── Posts per platform ────────────────────────────────────────────────
+        for platform in ("instagram", "linkedin", "facebook"):
+            platform_rows = [(ri, p) for ri, p in rows if p.get("platform") == platform]
+            if not platform_rows:
+                continue
+
+            color = PLATFORM_COLORS[platform]
+            icon  = PLATFORM_ICON_HTML[platform]
+            st.markdown(
+                f'<p style="font-weight:700;color:{color};margin:16px 0 8px 0;">'
+                f'{icon}{PLATFORM_LABELS[platform]}</p>',
+                unsafe_allow_html=True,
+            )
+
+            for row_idx, post in platform_rows:
+                cur_status = _eff(row_idx, post)
+                s_color    = STATUS_COLORS.get(cur_status, "#666")
+                s_label    = STATUS_LABELS.get(cur_status, cur_status)
+
+                col_post, col_ctrl = st.columns([5, 3])
+
+                with col_post:
+                    st.markdown(
+                        f'<p style="font-weight:600;font-size:13px;margin:4px 0 2px 0;">'
+                        f'📅 {post.get("dag","")} — {post.get("publicatiedatum","")}</p>'
+                        f'<div style="background:#f8f8f8;border-left:3px solid {color};'
+                        f'padding:8px 12px;border-radius:0 8px 8px 0;font-size:13px;white-space:pre-wrap;">'
+                        f'{post.get("caption","")}</div>'
+                        f'<p style="font-size:11px;color:{color};margin:3px 0 6px 0;">'
+                        f'{post.get("hashtags","")}</p>',
+                        unsafe_allow_html=True,
+                    )
+
+                with col_ctrl:
+                    st.markdown(
+                        f'<div style="text-align:center;padding:3px 8px;background:{s_color}18;'
+                        f'border:1px solid {s_color};border-radius:8px;font-size:12px;'
+                        f'font-weight:700;color:{s_color};margin-bottom:8px;">{s_label}</div>',
+                        unsafe_allow_html=True,
+                    )
+                    col_ok, col_rej_btn = st.columns(2)
+                    with col_ok:
+                        if st.button("✅", key=f"ok_{row_idx}", use_container_width=True):
+                            cur_updates[row_idx] = ("goedgekeurd", "")
+                    with col_rej_btn:
+                        if st.button("❌", key=f"rej_{row_idx}", use_container_width=True):
+                            cur_updates[row_idx] = ("afgewezen", _note_val(row_idx, post))
+
+                    if cur_status == "afgewezen":
+                        typed = st.text_input(
+                            "Reden",
+                            value=_note_val(row_idx, post),
+                            key=f"note_{row_idx}",
+                            placeholder="Wat moet er anders?",
+                            label_visibility="collapsed",
+                        )
+                        cur_updates[row_idx] = ("afgewezen", typed)
+
+                st.markdown(
+                    "<hr style='margin:4px 0 10px 0;border:none;border-top:1px solid #eee;'>",
+                    unsafe_allow_html=True,
+                )
+
+        # ── Actieknoppen onderaan de review ───────────────────────────────────
+        client_row_indices = {ri for ri, _ in rows}
+        pending_saves = {ri: v for ri, v in cur_updates.items() if ri in client_row_indices}
+
+        col_save, col_regen, col_dl = st.columns(3)
+
+        with col_save:
+            if st.button(
+                f"💾 Opslaan ({len(pending_saves)} wijzigingen)" if pending_saves else "💾 Opslaan",
+                key=f"save_{selected_client}",
+                disabled=not pending_saves,
+                use_container_width=True,
+                type="primary",
+            ):
+                save_statuses(spreadsheet_id, selected_tab, pending_saves, sa_json)
+                for ri in pending_saves:
+                    cur_updates.pop(ri, None)
+                load_posts_from_tab.clear()
+                st.success("✓ Opgeslagen naar Google Sheets")
+
+        with col_regen:
+            if st.button(
+                f"🔄 Regenereer ({n_rej})",
+                key=f"regen_{selected_client}",
+                disabled=n_rej == 0,
+                use_container_width=True,
+            ):
+                api_key = os.getenv("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY", "")
+                if not api_key:
+                    st.error("ANTHROPIC_API_KEY ontbreekt.")
+                else:
+                    if pending_saves:
+                        save_statuses(spreadsheet_id, selected_tab, pending_saves, sa_json)
+                        for ri in pending_saves:
+                            cur_updates.pop(ri, None)
+                    load_posts_from_tab.clear()
+                    fresh = load_posts_from_tab(spreadsheet_id, selected_tab, sa_json)
+                    with st.spinner(f"{n_rej} posts regenereren..."):
+                        count, err = regenerate_rejected(
+                            fresh, client_dict, api_key,
+                            spreadsheet_id, selected_tab, sa_json,
+                            filter_bedrijfsnaam=selected_client,
+                        )
+                        load_posts_from_tab.clear()
+                    if err:
+                        st.error(f"Fout: {err}")
+                    else:
+                        st.success(f"✓ {count} posts herschreven")
+
+        with col_dl:
+            client_posts = [p for _, p in rows]
+            approved_posts = [p for p in client_posts if p.get("status") == "goedgekeurd"]
+            if not approved_posts:
+                st.button("📄 Download", key=f"dl_{selected_client}", disabled=True, use_container_width=True)
+            else:
+                docx_bytes = _build_approved_docx(selected_client, approved_posts)
+                week_label = selected_tab.replace("Posts_", "").replace("_W", "_Week")
+                st.download_button(
+                    label=f"📄 Download ({len(approved_posts)})",
+                    data=docx_bytes,
+                    file_name=f"{selected_client} - Definitief {week_label}.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    key=f"dl_btn_{selected_client}",
+                    use_container_width=True,
+                )
+
+
 with tab_goedkeuring:
     st.subheader("Posts goedkeuren per week")
 
@@ -691,352 +927,5 @@ with tab_goedkeuring:
     if not spreadsheet_id or not sa_json:
         st.error("Credentials ontbreken.")
     else:
-        tabs = load_post_tabs(spreadsheet_id, sa_json)
+        render_approval_interface(spreadsheet_id, sa_json)
 
-        if not tabs:
-            st.info("Nog geen posts beschikbaar. Voer eerst de pipeline uit zodat posts naar Google Sheets worden geüpload.")
-        else:
-            # Weekkiezer
-            selected_tab = st.selectbox(
-                "Selecteer een week",
-                tabs,
-                format_func=lambda t: t.replace("Posts_", "").replace("_W", " · Week "),
-            )
-
-            posts = load_posts_from_tab(spreadsheet_id, selected_tab, sa_json)
-
-            if not posts:
-                st.warning("Geen posts gevonden in dit tabblad.")
-            else:
-                # Groepeer per klant (eerst, zodat we voortgang kunnen berekenen)
-                clients_in_week = {}
-                for i, post in enumerate(posts, start=2):
-                    name = post.get("bedrijfsnaam", "Onbekend")
-                    if name not in clients_in_week:
-                        clients_in_week[name] = []
-                    clients_in_week[name].append((i, post))
-
-                def _client_progress(rows):
-                    """Geeft (percentage, label, kleur) terug op basis van de statussen."""
-                    statuses = [r[1].get("status", "concept") for r in rows]
-                    total    = len(statuses)
-                    approved = sum(1 for s in statuses if s == "goedgekeurd")
-                    reviewed = sum(1 for s in statuses if s != "concept")
-                    if approved == total:
-                        return 100, "Klaar", "#22c55e"
-                    elif reviewed > 0:
-                        return 66, "In review", "#f59e0b"
-                    else:
-                        return 33, "Niet gestart", "#ef4444"
-
-                # Urgentie-banner op donderdag en vrijdag
-                now = datetime.now()
-                weekday = now.weekday()  # 0=ma, 3=do, 4=vr, 6=zo
-                days_until_monday = (7 - weekday) % 7 or 7
-                is_urgent = weekday in (3, 4)  # donderdag of vrijdag
-
-                incomplete = [
-                    name for name, rows in clients_in_week.items()
-                    if _client_progress(rows)[0] < 100
-                ]
-
-                if is_urgent and incomplete:
-                    urgency_color = "#ef4444" if weekday == 4 else "#f59e0b"
-                    dag_label = "vrijdag" if weekday == 4 else "donderdag"
-                    st.markdown(
-                        f'<div style="background:{urgency_color}18;border:1.5px solid {urgency_color};'
-                        f'border-radius:10px;padding:12px 16px;margin-bottom:16px;">'
-                        f'<span style="font-weight:700;color:{urgency_color};">⚠️ Het is {dag_label} — '
-                        f'{len(incomplete)} klant{"en" if len(incomplete) > 1 else ""} '
-                        f'nog niet volledig goedgekeurd voor maandag.</span></div>',
-                        unsafe_allow_html=True,
-                    )
-
-                # Totaaloverzicht bovenaan
-                # Session state voor wijzigingen
-                state_key = f"updates_{selected_tab}"
-                if state_key not in st.session_state:
-                    st.session_state[state_key] = {}
-                cur_updates = st.session_state[state_key]
-
-                def _effective_status(row_idx: int, post: dict) -> str:
-                    """Huidige status: session state heeft voorrang boven sheet."""
-                    override = cur_updates.get(row_idx)
-                    return override[0] if override else post.get("status", "concept")
-
-                def _client_progress_live(rows):
-                    statuses  = [_effective_status(ri, p) for ri, p in rows]
-                    total     = len(statuses)
-                    approved  = sum(1 for s in statuses if s == "goedgekeurd")
-                    reviewed  = sum(1 for s in statuses if s != "concept")
-                    if approved == total:
-                        return 100, "Klaar", "#22c55e"
-                    elif reviewed > 0:
-                        return 66, "In review", "#f59e0b"
-                    else:
-                        return 33, "Niet gestart", "#ef4444"
-
-                # Overzicht op basis van live UI-staat
-                total_posts  = len(posts)
-                approved_all = sum(_effective_status(i + 2, p) == "goedgekeurd" for i, p in enumerate(posts))
-                rejected_all = sum(_effective_status(i + 2, p) == "afgewezen"   for i, p in enumerate(posts))
-                pending_all  = total_posts - approved_all - rejected_all
-                done_clients = sum(1 for _, rows in clients_in_week.items()
-                                   if _client_progress_live(rows)[0] == 100)
-                total_clients = len(clients_in_week)
-
-                c1, c2, c3, c4, c5 = st.columns(5)
-                c1.metric("Klanten klaar", f"{done_clients}/{total_clients}")
-                c2.metric("Posts totaal", total_posts)
-                c3.metric("✅ Goedgekeurd", approved_all)
-                c4.metric("❌ Afgewezen", rejected_all)
-                c5.metric("⏳ Concept", pending_all)
-
-                overall_pct = int(approved_all / total_posts * 100) if total_posts else 0
-                st.markdown(
-                    f'<div style="background:#e5e7eb;border-radius:99px;height:8px;margin:8px 0 16px 0;">'
-                    f'<div style="background:#22c55e;width:{overall_pct}%;height:8px;border-radius:99px;'
-                    f'transition:width .3s;"></div></div>'
-                    f'<p style="font-size:12px;color:#666;margin-top:-8px;">{overall_pct}% van alle posts goedgekeurd</p>',
-                    unsafe_allow_html=True,
-                )
-
-                st.divider()
-
-                # Sorteer: onvolledig eerst, dan op naam
-                sorted_clients = sorted(
-                    clients_in_week.items(),
-                    key=lambda x: (_client_progress_live(x[1])[0], x[0])
-                )
-
-                for bedrijfsnaam, rows in sorted_clients:
-                    pct, pct_label, pct_color = _client_progress_live(rows)
-                    n_approved = sum(1 for ri, p in rows if _effective_status(ri, p) == "goedgekeurd")
-                    n_total    = len(rows)
-                    urgent_dot = "🔴 " if is_urgent and pct < 100 else ""
-
-                    expander_label = (
-                        f"{urgent_dot}{bedrijfsnaam}  ·  "
-                        f"{pct}% — {pct_label}  ·  "
-                        f"{n_approved}/{n_total} goedgekeurd"
-                    )
-
-                    with st.expander(expander_label, expanded=False):
-                        # Voortgangsbalk per klant
-                        st.markdown(
-                            f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">'
-                            f'<div style="flex:1;background:#e5e7eb;border-radius:99px;height:6px;">'
-                            f'<div style="background:{pct_color};width:{pct}%;height:6px;border-radius:99px;"></div>'
-                            f'</div>'
-                            f'<span style="font-size:13px;font-weight:700;color:{pct_color};white-space:nowrap;">'
-                            f'{pct}% &nbsp;{pct_label}</span>'
-                            f'</div>',
-                            unsafe_allow_html=True,
-                        )
-
-                        for platform in ("instagram", "linkedin", "facebook"):
-                            platform_rows = [(i, p) for i, p in rows if p.get("platform") == platform]
-                            if not platform_rows:
-                                continue
-
-                            color = PLATFORM_COLORS[platform]
-                            icon  = PLATFORM_ICON_HTML[platform]
-                            st.markdown(
-                                f'<p style="font-weight:700;color:{color};margin:12px 0 6px 0;">'
-                                f'{icon}{PLATFORM_LABELS[platform]}</p>',
-                                unsafe_allow_html=True,
-                            )
-
-                            for row_idx, post in platform_rows:
-                                dag    = post.get("dag", "")
-                                datum  = post.get("publicatiedatum", "")
-                                status = post.get("status", "concept")
-                                note   = post.get("opmerkingen", "")
-                                s_color = STATUS_COLORS.get(status, "#666")
-                                s_label = STATUS_LABELS.get(status, status)
-
-                                with st.container():
-                                    col_post, col_ctrl = st.columns([5, 3])
-
-                                    with col_post:
-                                        st.markdown(
-                                            f'<p style="font-weight:600;font-size:13px;margin:4px 0 2px 0;">'
-                                            f'📅 {dag} — {datum}</p>'
-                                            f'<div style="background:#f8f8f8;border-left:3px solid {color};'
-                                            f'padding:8px 12px;border-radius:0 8px 8px 0;'
-                                            f'font-size:13px;white-space:pre-wrap;">'
-                                            f'{post.get("caption","")}</div>'
-                                            f'<p style="font-size:11px;color:{color};margin:3px 0 6px 0;">'
-                                            f'{post.get("hashtags","")}</p>',
-                                            unsafe_allow_html=True,
-                                        )
-
-                                    with col_ctrl:
-                                        # Status badge
-                                        st.markdown(
-                                            f'<div style="text-align:center;padding:3px 8px;'
-                                            f'background:{s_color}18;border:1px solid {s_color};'
-                                            f'border-radius:8px;font-size:12px;font-weight:700;'
-                                            f'color:{s_color};margin-bottom:8px;">{s_label}</div>',
-                                            unsafe_allow_html=True,
-                                        )
-
-                                        # Directe actieknoppen — auto-save op klik
-                                        col_ok, col_rej = st.columns(2)
-                                        with col_ok:
-                                            if st.button("✅", key=f"approve_{row_idx}",
-                                                         use_container_width=True, help="Goedkeuren"):
-                                                save_statuses(spreadsheet_id, selected_tab,
-                                                              {row_idx: ("goedgekeurd", "")}, sa_json)
-                                                load_posts_from_tab.clear()
-                                                st.rerun()
-                                        with col_rej:
-                                            if st.button("❌", key=f"reject_{row_idx}",
-                                                         use_container_width=True, help="Afwijzen"):
-                                                save_statuses(spreadsheet_id, selected_tab,
-                                                              {row_idx: ("afgewezen", note)}, sa_json)
-                                                load_posts_from_tab.clear()
-                                                st.rerun()
-
-                                        # Redenenveld bij afwijzing
-                                        if status == "afgewezen":
-                                            new_note = st.text_input(
-                                                "Reden",
-                                                value=note,
-                                                key=f"note_{row_idx}",
-                                                placeholder="Wat moet er anders?",
-                                                label_visibility="collapsed",
-                                            )
-                                            if st.button("Reden opslaan", key=f"note_save_{row_idx}",
-                                                         use_container_width=True):
-                                                save_statuses(spreadsheet_id, selected_tab,
-                                                              {row_idx: ("afgewezen", new_note)}, sa_json)
-                                                load_posts_from_tab.clear()
-                                                st.rerun()
-
-                                    st.markdown("<hr style='margin:6px 0;border:none;border-top:1px solid #eee;'>",
-                                                unsafe_allow_html=True)
-
-                        # Knoppen per klant
-                        client_posts = [p for _, p in rows]
-                        n_rej_client = sum(1 for p in client_posts if p.get("status") == "afgewezen")
-                        n_app_client = sum(1 for p in client_posts if p.get("status") == "goedgekeurd")
-
-                        col_regen_c, col_export_c, col_status_c = st.columns([2, 2, 4])
-
-                        with col_regen_c:
-                            if st.button(
-                                f"🔄 Regenereer ({n_rej_client})",
-                                key=f"regen_{bedrijfsnaam}",
-                                disabled=n_rej_client == 0,
-                                use_container_width=True,
-                            ):
-                                api_key = os.getenv("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY", "")
-                                if not api_key:
-                                    st.error("ANTHROPIC_API_KEY ontbreekt in secrets.")
-                                else:
-                                    if client_updates:
-                                        save_statuses(spreadsheet_id, selected_tab, client_updates, sa_json)
-                                    load_posts_from_tab.clear()
-                                    fresh_posts = load_posts_from_tab(spreadsheet_id, selected_tab, sa_json)
-                                    client_dict = load_client_dict(spreadsheet_id, sa_json)
-                                    with st.spinner(f"{n_rej_client} posts regenereren..."):
-                                        count, err = regenerate_rejected(
-                                            fresh_posts, client_dict, api_key,
-                                            spreadsheet_id, selected_tab, sa_json,
-                                            filter_bedrijfsnaam=bedrijfsnaam,
-                                        )
-                                        load_posts_from_tab.clear()
-                                        st.session_state.pop(state_key, None)
-                                    if err:
-                                        st.error(f"Fout: {err}")
-                                    else:
-                                        st.success(f"✓ {count} posts herschreven → terug naar concept")
-
-                        with col_export_c:
-                            if n_app_client == 0:
-                                st.button(
-                                    "📄 Download",
-                                    key=f"dl_{bedrijfsnaam}",
-                                    disabled=True,
-                                    use_container_width=True,
-                                )
-                            else:
-                                docx_bytes = _build_approved_docx(bedrijfsnaam, client_posts)
-                                week_label = selected_tab.replace("Posts_", "").replace("_W", "_Week")
-                                st.download_button(
-                                    label=f"📄 Download ({n_app_client})",
-                                    data=docx_bytes,
-                                    file_name=f"{bedrijfsnaam} - Definitief {week_label}.docx",
-                                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                                    key=f"dl_btn_{bedrijfsnaam}",
-                                    use_container_width=True,
-                                )
-
-                        with col_status_c:
-                            if pct == 100:
-                                st.markdown(
-                                    '<span style="color:#22c55e;font-size:13px;font-weight:600;">'
-                                    '✅ Volledig goedgekeurd</span>',
-                                    unsafe_allow_html=True,
-                                )
-
-                # Actieknoppen onderaan (regenereer + export)
-                st.divider()
-                n_rejected  = sum(1 for p in posts if p.get("status") == "afgewezen")
-                n_approved  = sum(1 for p in posts if p.get("status") == "goedgekeurd")
-
-                col_regen, col_export = st.columns([3, 3])
-
-                with col_regen:
-                    regen_disabled = n_rejected == 0
-                    if st.button(
-                        f"🔄 Regenereer afgewezen ({n_rejected})",
-                        disabled=regen_disabled,
-                        use_container_width=True,
-                        help="Herschrijft alle afgewezen posts op basis van de opmerking",
-                    ):
-                        api_key = os.getenv("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY", "")
-                        if not api_key:
-                            st.error("ANTHROPIC_API_KEY ontbreekt in secrets.")
-                        else:
-                            updates = st.session_state.get(state_key, {})
-                            if updates:
-                                save_statuses(spreadsheet_id, selected_tab, updates, sa_json)
-                            load_posts_from_tab.clear()
-                            fresh_posts = load_posts_from_tab(spreadsheet_id, selected_tab, sa_json)
-                            client_dict = load_client_dict(spreadsheet_id, sa_json)
-                            with st.spinner(f"{n_rejected} posts regenereren via Claude..."):
-                                count, err = regenerate_rejected(
-                                    fresh_posts, client_dict, api_key,
-                                    spreadsheet_id, selected_tab, sa_json,
-                                )
-                                load_posts_from_tab.clear()
-                                st.session_state.pop(state_key, None)
-                            if err:
-                                st.error(f"Fout: {err}")
-                            else:
-                                st.success(f"✓ {count} posts herschreven → terug naar concept")
-
-                with col_export:
-                    export_disabled = n_approved == 0
-                    if export_disabled:
-                        st.button(
-                            f"📄 Download definitief ({n_approved})",
-                            disabled=True,
-                            use_container_width=True,
-                            help="Goedkeur eerst posts om te kunnen exporteren",
-                        )
-                    else:
-                        with st.spinner("Documenten genereren..."):
-                            zip_bytes = build_export_zip(posts, selected_tab)
-                        week_label = selected_tab.replace("Posts_", "").replace("_W", "_Week")
-                        st.download_button(
-                            label=f"📄 Download definitief ({n_approved} posts)",
-                            data=zip_bytes,
-                            file_name=f"Definitief_{week_label}.zip",
-                            mime="application/zip",
-                            use_container_width=True,
-                        )
-
-                st.caption("Regenereer → Claude herschrijft afgewezen posts op basis van de opmerking · Download → zip met goedgekeurde Word-bestanden per klant")
