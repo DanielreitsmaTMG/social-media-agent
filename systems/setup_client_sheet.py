@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 import gspread
 from google.oauth2.service_account import Credentials
 
-load_dotenv()
+load_dotenv(override=True)
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",

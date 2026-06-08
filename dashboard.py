@@ -30,7 +30,7 @@ from google.oauth2.service_account import Credentials as WriteCredentials
 from google.oauth2.service_account import Credentials
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 # ── Paginaconfiguratie ────────────────────────────────────────────────────────
 
@@ -615,6 +615,49 @@ def regenerate_rejected(all_posts: list[dict], client_dict: dict, api_key: str,
         return 0, str(e)
 
 
+def regenerate_single_post(post: dict, client_dict: dict, api_key: str,
+                           spreadsheet_id: str, tab_name: str, sa_info_json: str,
+                           row_idx: int) -> tuple[dict | None, str]:
+    """
+    Genereert direct een nieuw concept voor één afgewezen post (op basis van de
+    opgegeven reden) en schrijft het meteen terug naar de sheet (status -> concept).
+    Geeft (nieuwe_post_velden | None, foutmelding) terug.
+    """
+    import anthropic
+
+    try:
+        ac = anthropic.Anthropic(api_key=api_key)
+        client = client_dict.get(post.get("bedrijfsnaam", ""), {})
+        prompt = _regenerate_prompt(post, client)
+
+        msg = ac.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=1024,
+            system="Je bent een professionele social media contentschrijver. Retourneer uitsluitend valide JSON.",
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = msg.content[0].text.strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1].lstrip("json").strip()
+        raw = raw.rstrip("```").strip()
+        new_post = json.loads(raw)
+
+        new_caption  = new_post.get("caption", "")
+        new_hashtags = new_post.get("hashtags", "")
+
+        sa_info = json.loads(sa_info_json)
+        gc = _get_write_client(sa_info)
+        worksheet = gc.open_by_key(spreadsheet_id).worksheet(tab_name)
+        worksheet.batch_update([{
+            "range": f"F{row_idx}:H{row_idx}",
+            "values": [[new_caption, new_hashtags, "concept"]],
+        }], value_input_option="RAW")
+
+        return {"caption": new_caption, "hashtags": new_hashtags}, ""
+    except Exception as e:
+        return None, str(e)
+
+
 def _build_approved_docx(bedrijfsnaam: str, approved_posts: list[dict]) -> bytes:
     """Bouwt een Word-document met alleen de goedgekeurde posts."""
     from docx import Document
@@ -696,45 +739,6 @@ def build_export_zip(posts: list[dict], tab_name: str) -> bytes:
     return buf.getvalue()
 
 
-def _send_studio_mail(bedrijfsnaam: str, week_label: str, docx_bytes: bytes, api_key: str) -> str:
-    """Stuurt mail naar studio met Word-bijlage via SendGrid. Geeft foutmelding terug of ''."""
-    import base64 as _b64
-    from sendgrid import SendGridAPIClient
-    from sendgrid.helpers.mail import (
-        Mail, Attachment, FileContent, FileName, FileType, Disposition,
-    )
-
-    subject = f"{bedrijfsnaam} | Je kunt aan de slag met de afbeeldingen"
-    body = (
-        f"Hey,\n\n"
-        f"We hebben de teksten voor {bedrijfsnaam} voor {week_label} goedgekeurd. "
-        f"Kun je aan de slag met de afbeeldingen voor deze klant?\n\n"
-        f"Alvast bedankt!"
-    )
-
-    message = Mail(
-        from_email="noreply@topmediagroep.nl",
-        to_emails="studio@topmediagroep.nl",
-        subject=subject,
-        plain_text_content=body,
-    )
-
-    attachment = Attachment(
-        file_content=FileContent(_b64.b64encode(docx_bytes).decode()),
-        file_name=FileName(f"{bedrijfsnaam} - Definitief {week_label}.docx"),
-        file_type=FileType("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
-        disposition=Disposition("attachment"),
-    )
-    message.attachment = attachment
-
-    try:
-        sg = SendGridAPIClient(api_key)
-        sg.send(message)
-        return ""
-    except Exception as e:
-        return str(e)
-
-
 def _sa_info_json() -> str | None:
     b64 = os.getenv("GOOGLE_SERVICE_ACCOUNT_B64") or st.secrets.get("GOOGLE_SERVICE_ACCOUNT_B64")
     if not b64:
@@ -758,31 +762,42 @@ def _eff_note(cur_updates, row_idx, post):
 
 
 @st.fragment
-def _render_post_card(selected_tab, row_idx, post, color):
+def _render_post_card(selected_tab, row_idx, post, color, client_dict, spreadsheet_id, sa_json):
     """Eigen mini-fragment per post: een klik op ✅/❌ rerendert alleen dít kaartje,
     niet de hele klantweergave (metrics, navigator, alle andere posts)."""
     state_key    = f"updates_{selected_tab}"
     pending_key  = f"pending_{selected_tab}"
     titles_key   = f"titles_{selected_tab}"
     ptitles_key  = f"ptitles_{selected_tab}"
+    regen_key    = f"regen_{selected_tab}"
     cur_updates    = st.session_state[state_key]
     pending        = st.session_state[pending_key]
     cur_titles     = st.session_state[titles_key]
     pending_titles = st.session_state[ptitles_key]
+    if regen_key not in st.session_state:
+        st.session_state[regen_key] = {}
+    regen_overrides = st.session_state[regen_key]
 
     cur_status = _eff_status(cur_updates, row_idx, post)
+
+    # Toon eventueel net geregenereerde tekst i.p.v. de originele post-inhoud
+    overridden  = regen_overrides.get(row_idx)
+    disp_caption  = overridden["caption"]  if overridden else post.get("caption", "")
+    disp_hashtags = overridden["hashtags"] if overridden else post.get("hashtags", "")
 
     col_post, col_ctrl = st.columns([5, 3])
 
     with col_post:
+        if overridden:
+            st.caption("🔄 Nieuw concept gegenereerd op basis van je feedback")
         st.markdown(
             f'<p style="font-weight:600;font-size:13px;margin:4px 0 2px 0;">'
             f'📅 {post.get("dag","")} — {post.get("publicatiedatum","")}</p>'
             f'<div style="background:#f8f8f8;border-left:3px solid {color};'
             f'padding:8px 12px;border-radius:0 8px 8px 0;font-size:13px;white-space:pre-wrap;">'
-            f'{post.get("caption","")}</div>'
+            f'{disp_caption}</div>'
             f'<p style="font-size:11px;color:{color};margin:3px 0 4px 0;">'
-            f'{post.get("hashtags","")}</p>',
+            f'{disp_hashtags}</p>',
             unsafe_allow_html=True,
         )
         current_title = cur_titles.get(row_idx) or post.get("beeldtitel", "")
@@ -839,6 +854,35 @@ def _render_post_card(selected_tab, row_idx, post, color):
             )
             cur_updates[row_idx] = ("afgewezen", typed)
             pending[row_idx]     = ("afgewezen", typed)
+
+            if st.button(
+                "🔄 Genereer nieuw concept",
+                key=f"autoregen_{row_idx}",
+                use_container_width=True,
+                disabled=not typed.strip(),
+                help="Schrijft direct een nieuwe versie op basis van je feedback en zet de status terug naar concept"
+                     if typed.strip() else "Vul eerst een reden in zodat de AI weet wat er anders moet",
+            ):
+                api_key = os.getenv("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY", "")
+                if not api_key:
+                    st.error("ANTHROPIC_API_KEY ontbreekt.")
+                else:
+                    with st.spinner("Nieuw concept genereren..."):
+                        post_for_prompt = {**post, "caption": disp_caption,
+                                           "hashtags": disp_hashtags, "opmerkingen": typed}
+                        new_fields, err = regenerate_single_post(
+                            post_for_prompt, client_dict, api_key,
+                            spreadsheet_id, selected_tab, sa_json, row_idx,
+                        )
+                    if err:
+                        st.error(f"Fout bij regenereren: {err}")
+                    else:
+                        regen_overrides[row_idx] = new_fields
+                        cur_updates[row_idx] = ("concept", "")
+                        pending.pop(row_idx, None)
+                        load_posts_from_tab.clear()
+                        st.success("✓ Nieuw concept klaar — beoordeel hierboven")
+                        st.rerun(scope="fragment")
 
     st.markdown(
         "<hr style='margin:4px 0 10px 0;border:none;border-top:1px solid #eee;'>",
@@ -930,6 +974,51 @@ def render_approval_interface(posts, client_dict, spreadsheet_id, selected_tab, 
                 unsafe_allow_html=True,
             )
 
+    # ── Statusoverzicht per klant ──────────────────────────────────────────────
+    def _client_stats(rows):
+        n_app = sum(1 for ri, p in rows if _eff(ri, p) == "goedgekeurd")
+        n_rej = sum(1 for ri, p in rows if _eff(ri, p) == "afgewezen")
+        n_con = len(rows) - n_app - n_rej
+        return n_app, n_rej, n_con
+
+    not_started, almost_done, waiting_regen = [], [], []
+    for name, rows in clients_in_week.items():
+        n_app, n_rej, n_con = _client_stats(rows)
+        if n_app == 0 and n_rej == 0:
+            not_started.append(name)
+        elif n_rej > 0:
+            waiting_regen.append((name, n_rej))
+        elif n_app < len(rows):
+            almost_done.append((name, n_app, len(rows)))
+
+    with st.expander(
+        f"📊 Statusoverzicht — {len(not_started)} nog niet gestart · "
+        f"{len(waiting_regen)} met afgewezen posts · {len(almost_done)} bijna klaar",
+        expanded=is_urgent,
+    ):
+        ov1, ov2, ov3 = st.columns(3)
+        with ov1:
+            st.markdown("**🔴 Nog niet gestart**")
+            if not_started:
+                for n in not_started:
+                    st.markdown(f"- {n}")
+            else:
+                st.caption("Niemand — top!")
+        with ov2:
+            st.markdown("**🟠 Wacht op regeneratie**")
+            if waiting_regen:
+                for n, n_rej in waiting_regen:
+                    st.markdown(f"- {n} _({n_rej} afgewezen)_")
+            else:
+                st.caption("Geen afgewezen posts open.")
+        with ov3:
+            st.markdown("**🟡 Bijna klaar**")
+            if almost_done:
+                for n, n_app, total in almost_done:
+                    st.markdown(f"- {n} _({n_app}/{total} goedgekeurd)_")
+            else:
+                st.caption("Niets in dit overzicht.")
+
     st.divider()
 
     # ── Layout: navigator links, review rechts ────────────────────────────────
@@ -946,16 +1035,50 @@ def render_approval_interface(posts, client_dict, spreadsheet_id, selected_tab, 
 
     with col_nav:
         st.markdown("**Klanten**")
-        selected_client = st.radio(
-            "Klant",
-            sorted_names,
-            format_func=lambda n: (
-                f"✅ {n}" if _progress(clients_in_week[n])[0] == 100
-                else f"{'🔴' if is_urgent else '⏳'} {n}"
-            ),
+        nav_filter = st.selectbox(
+            "Filter",
+            ["Alle", "Nog niet gestart", "Heeft afgewezen posts", "In review", "Klaar"],
             label_visibility="collapsed",
-            key=f"radio_client_{selected_tab}",
+            key=f"navfilter_{selected_tab}",
         )
+
+        def _matches_filter(name):
+            if nav_filter == "Alle":
+                return True
+            r = clients_in_week[name]
+            n_app, n_rej, n_con = _client_stats(r)
+            if nav_filter == "Nog niet gestart":
+                return n_app == 0 and n_rej == 0
+            if nav_filter == "Heeft afgewezen posts":
+                return n_rej > 0
+            if nav_filter == "In review":
+                return 0 < n_app < len(r)
+            if nav_filter == "Klaar":
+                return n_app == len(r)
+            return True
+
+        filtered_names = [n for n in sorted_names if _matches_filter(n)]
+
+        if not filtered_names:
+            st.caption("Geen klanten in dit filter.")
+            selected_client = sorted_names[0]
+        else:
+            radio_key = f"radio_client_{selected_tab}"
+            current = st.session_state.get(radio_key)
+            if current not in filtered_names:
+                # Voorkom StreamlitAPIException wanneer de bewaarde selectie
+                # niet meer in de gefilterde lijst voorkomt (filter gewijzigd)
+                st.session_state.pop(radio_key, None)
+            selected_client = st.radio(
+                "Klant",
+                filtered_names,
+                format_func=lambda n: (
+                    f"✅ {n}" if _progress(clients_in_week[n])[0] == 100
+                    else f"{'🔴' if is_urgent else '⏳'} {n}"
+                ),
+                label_visibility="collapsed",
+                key=radio_key,
+            )
 
     with col_review:
         rows = clients_in_week[selected_client]
@@ -1007,7 +1130,7 @@ def render_approval_interface(posts, client_dict, spreadsheet_id, selected_tab, 
             )
 
             for row_idx, post in platform_rows:
-                _render_post_card(selected_tab, row_idx, post, color)
+                _render_post_card(selected_tab, row_idx, post, color, client_dict, spreadsheet_id, sa_json)
 
         # ── Actieknoppen onderaan de review ───────────────────────────────────
         client_row_indices = {ri for ri, _ in rows}

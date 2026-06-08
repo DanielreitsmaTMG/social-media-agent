@@ -24,7 +24,7 @@ from typing import Optional
 import anthropic
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 MODEL = "claude-opus-4-8"
 BATCH_SIZE = 10

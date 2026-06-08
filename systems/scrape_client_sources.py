@@ -29,7 +29,7 @@ import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 HEADERS = {
     "User-Agent": (

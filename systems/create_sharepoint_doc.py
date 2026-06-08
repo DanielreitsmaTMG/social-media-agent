@@ -37,7 +37,7 @@ from docx.shared import Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 GRAPH_URL = "https://graph.microsoft.com/v1.0"
 SCOPE = ["https://graph.microsoft.com/.default"]
