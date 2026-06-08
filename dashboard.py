@@ -35,7 +35,7 @@ load_dotenv(override=True)
 # ── Paginaconfiguratie ────────────────────────────────────────────────────────
 
 st.set_page_config(
-    page_title="Pulse · Content Studio — TopMediaGroep",
+    page_title="Top Socials · TopMediaGroep",
     page_icon="✨",
     layout="wide",
 )
@@ -48,10 +48,21 @@ PLATFORM_COLORS = {
     "facebook":  "#1877F2",
 }
 
+def _platform_badge(label: str, color: str) -> str:
+    """Zelfvoorzienend platform-icoon (geen externe afbeelding nodig — rendert altijd,
+    zodat icoon en tekst nooit door elkaar kunnen lopen door een mislukte image-load)."""
+    return (
+        f'<span style="display:inline-flex;align-items:center;justify-content:center;'
+        f'width:20px;height:20px;min-width:20px;border-radius:6px;background:{color};'
+        f'color:#fff;font-size:9px;font-weight:800;letter-spacing:.02em;'
+        f'margin-right:7px;vertical-align:middle;line-height:1;">{label}</span>'
+    )
+
+
 PLATFORM_ICON_HTML = {
-    "instagram": '<img src="https://cdn.simpleicons.org/instagram/E1306C" width="16" height="16" style="vertical-align:middle;margin-right:6px;">',
-    "linkedin":  '<img src="https://cdn.simpleicons.org/linkedin/0077B5" width="16" height="16" style="vertical-align:middle;margin-right:6px;">',
-    "facebook":  '<img src="https://cdn.simpleicons.org/facebook/1877F2" width="16" height="16" style="vertical-align:middle;margin-right:6px;">',
+    "instagram": _platform_badge("IG", PLATFORM_COLORS["instagram"]),
+    "linkedin":  _platform_badge("IN", PLATFORM_COLORS["linkedin"]),
+    "facebook":  _platform_badge("FB", PLATFORM_COLORS["facebook"]),
 }
 
 PLATFORM_LABELS = {
@@ -199,7 +210,7 @@ def _total_posts_pw(client: dict) -> int:
 
 # ── Merk & design system ──────────────────────────────────────────────────────
 #
-# "Pulse" — het content-cockpit van TopMediaGroep.
+# "Top Socials" — het content-cockpit van TopMediaGroep.
 # Eén consistente kleuren-, typografie- en componentenset zodat de tool oogt
 # als een afgewerkt product i.p.v. een intern script.
 
@@ -258,19 +269,19 @@ p, .stMarkdown, .stCaption, label {{
 #MainMenu, footer, header[data-testid="stHeader"] {{ visibility: hidden; height: 0; }}
 .block-container {{ padding-top: 1.6rem; max-width: 1280px; }}
 
-/* ── Merk-header (Pulse wordmark) ──────────────────────────────────────── */
-.pulse-header {{
+/* ── Merk-header (Top Socials wordmark) ──────────────────────────────────────── */
+.topsoc-header {{
     display: flex;
     align-items: center;
     justify-content: space-between;
     margin-bottom: 6px;
 }}
-.pulse-brand {{
+.topsoc-brand {{
     display: flex;
     align-items: center;
     gap: 12px;
 }}
-.pulse-logo {{
+.topsoc-logo {{
     width: 42px;
     height: 42px;
     border-radius: 12px;
@@ -281,19 +292,19 @@ p, .stMarkdown, .stCaption, label {{
     font-size: 20px;
     box-shadow: 0 6px 16px rgba(79,70,229,.28);
 }}
-.pulse-titles {{ line-height: 1.15; }}
-.pulse-name {{
+.topsoc-titles {{ line-height: 1.15; }}
+.topsoc-name {{
     font-size: 22px;
     font-weight: 800;
     color: var(--brand-ink);
     letter-spacing: -0.02em;
 }}
-.pulse-sub {{
+.topsoc-sub {{
     font-size: 13px;
     color: var(--brand-ink-soft);
     font-weight: 500;
 }}
-.pulse-pill {{
+.topsoc-pill {{
     background: var(--brand-primary-soft);
     color: var(--brand-primary-dark);
     font-size: 12px;
@@ -470,15 +481,15 @@ p, .stMarkdown, .stCaption, label {{
 
 st.markdown(
     """
-    <div class="pulse-header">
-        <div class="pulse-brand">
-            <div class="pulse-logo">✨</div>
-            <div class="pulse-titles">
-                <div class="pulse-name">Pulse</div>
-                <div class="pulse-sub">Content Studio · TopMediaGroep</div>
+    <div class="topsoc-header">
+        <div class="topsoc-brand">
+            <div class="topsoc-logo">✨</div>
+            <div class="topsoc-titles">
+                <div class="topsoc-name">Top Socials</div>
+                <div class="topsoc-sub">Content &amp; goedkeuring voor al je social-mediaklanten</div>
             </div>
         </div>
-        <div class="pulse-pill">Live overzicht</div>
+        <div class="topsoc-pill">Live overzicht</div>
     </div>
     """,
     unsafe_allow_html=True,
