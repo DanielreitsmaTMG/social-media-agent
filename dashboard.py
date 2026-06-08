@@ -20,6 +20,7 @@ import re
 import zipfile
 from datetime import datetime, date, timedelta
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
 
 import gspread
 import requests
@@ -31,6 +32,16 @@ from google.oauth2.service_account import Credentials
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
+
+# Streamlit Cloud draait op UTC — voor de juiste runtijden en datums
+# rekenen we expliciet om naar Nederlandse (Amsterdamse) tijd.
+AMSTERDAM_TZ = ZoneInfo("Europe/Amsterdam")
+
+
+def _now_ams() -> datetime:
+    """Huidige tijd in Amsterdam (incl. automatische zomer-/wintertijd), tz-naïef
+    gemaakt zodat het probleemloos te combineren is met de rest van de datetime-logica."""
+    return datetime.now(AMSTERDAM_TZ).replace(tzinfo=None)
 
 # ── Paginaconfiguratie ────────────────────────────────────────────────────────
 
@@ -75,8 +86,8 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
 
 def _next_wednesday_23() -> datetime:
-    """Geeft de eerstvolgende woensdag om 23:00 Amsterdam-tijd terug (als UTC-naïeve datetime)."""
-    now = datetime.now()
+    """Geeft de eerstvolgende woensdag om 23:00 Amsterdam-tijd terug (tz-naïeve datetime in Amsterdamse tijd)."""
+    now = _now_ams()
     days_ahead = (2 - now.weekday()) % 7  # 2 = woensdag
     if days_ahead == 0 and now.hour >= 23:
         days_ahead = 7
@@ -524,7 +535,7 @@ st.divider()
 col1, col2, col3 = st.columns(3)
 
 next_run = _next_wednesday_23()
-delta    = next_run - datetime.now()
+delta    = next_run - _now_ams()
 
 with col1:
     st.metric(
@@ -649,7 +660,7 @@ with tab_klanten:
                     for lbl, url in links:
                         st.markdown(f"[{lbl}]({url})")
 
-    st.caption(f"Gegevens worden elke 5 minuten vernieuwd · Laatste update: {datetime.now().strftime('%H:%M:%S')}")
+    st.caption(f"Gegevens worden elke 5 minuten vernieuwd · Laatste update: {_now_ams().strftime('%H:%M:%S')}")
 
 # ── Goedkeuring tab ───────────────────────────────────────────────────────────
 
@@ -900,7 +911,7 @@ def _build_approved_docx(bedrijfsnaam: str, approved_posts: list[dict]) -> bytes
     title = doc.add_heading(f"{bedrijfsnaam} — Definitieve Social Media Posts", level=1)
     title.alignment = WD_ALIGN_PARAGRAPH.LEFT
 
-    sub = doc.add_paragraph(f"Gegenereerd op {datetime.now().strftime('%d-%m-%Y %H:%M')} · Alleen goedgekeurde posts")
+    sub = doc.add_paragraph(f"Gegenereerd op {_now_ams().strftime('%d-%m-%Y %H:%M')} · Alleen goedgekeurde posts")
     sub.runs[0].font.color.rgb = RGBColor(0x88, 0x88, 0x88)
     sub.runs[0].font.size = Pt(10)
     doc.add_paragraph()
@@ -1162,7 +1173,7 @@ def render_approval_interface(posts, client_dict, spreadsheet_id, selected_tab, 
         return 0, "Niet gestart", "#ef4444"
 
     # ── Urgentie ──────────────────────────────────────────────────────────────
-    is_urgent = datetime.now().weekday() in (3, 4)
+    is_urgent = _now_ams().weekday() in (3, 4)
 
     # ── Metrics ───────────────────────────────────────────────────────────────
     total_posts  = len(posts)
@@ -1190,8 +1201,8 @@ def render_approval_interface(posts, client_dict, spreadsheet_id, selected_tab, 
     if is_urgent:
         incomplete = [n for n, rows in clients_in_week.items() if _progress(rows)[0] < 100]
         if incomplete:
-            clr = "#ef4444" if datetime.now().weekday() == 4 else "#f59e0b"
-            dag = "vrijdag" if datetime.now().weekday() == 4 else "donderdag"
+            clr = "#ef4444" if _now_ams().weekday() == 4 else "#f59e0b"
+            dag = "vrijdag" if _now_ams().weekday() == 4 else "donderdag"
             st.markdown(
                 f'<div style="background:{clr}18;border:1.5px solid {clr};border-radius:10px;'
                 f'padding:12px 16px;margin-bottom:12px;">'
