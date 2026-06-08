@@ -336,6 +336,13 @@ p, .stMarkdown, .stCaption, label {{
     border-radius: 16px;
     padding: 16px 20px;
     box-shadow: 0 1px 2px rgba(16,24,40,.04);
+    /* Vaste minimumhoogte zodat KPI-kaarten gelijk ogen, ook als één ervan
+       een extra delta-regel heeft (zoals "over 2d 6u" bij Volgende run) */
+    min-height: 96px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
 }}
 [data-testid="stMetricLabel"] {{
     font-size: 12px !important;
