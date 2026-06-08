@@ -34,7 +34,7 @@ SCOPES = [
 
 HEADERS = [
     "klant_id", "bedrijfsnaam", "platform", "dag",
-    "publicatiedatum", "caption", "hashtags", "status", "opmerkingen",
+    "publicatiedatum", "caption", "hashtags", "status", "opmerkingen", "beeldtitel",
 ]
 
 MONTHS_NL = [
@@ -109,13 +109,14 @@ def upload_posts(posts_data: dict, spreadsheet_id: str, service_account_json: st
                     post.get("hashtags", ""),
                     "concept",
                     "",
+                    post.get("beeldtitel", ""),
                 ])
 
     worksheet.update(rows, value_input_option="RAW")
 
     # Opmaak: header vet, kolommen bevries
     worksheet.freeze(rows=1)
-    worksheet.format("A1:I1", {"textFormat": {"bold": True}})
+    worksheet.format("A1:J1", {"textFormat": {"bold": True}})
 
     print(f"{len(rows) - 1} posts geüpload naar tabblad '{tab_name}'")
     return tab_name

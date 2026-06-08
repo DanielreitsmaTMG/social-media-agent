@@ -121,12 +121,14 @@ Richtlijnen:
 Geef de output als valide JSON in exact dit formaat:
 {{
   "instagram": [
-    {{"dag": "Maandag", "caption": "...", "hashtags": "#hashtag1 #hashtag2"}},
+    {{"dag": "Maandag", "caption": "...", "hashtags": "#hashtag1 #hashtag2", "beeldtitel": "Korte titel voor afbeelding"}},
     ...
   ],
   "linkedin": [...],
   "facebook": [...]
 }}
+
+De beeldtitel is een korte titel (maximaal 6 woorden) die de lading van de afbeelding dekt. Dit wordt door de studio gebruikt als tekst in de afbeelding.
 
 Laat een platform-sleutel weg als dat platform 0 posts heeft.
 Geen tekst buiten de JSON."""
