@@ -467,6 +467,44 @@ def load_posts_from_tab(spreadsheet_id: str, tab_name: str, sa_info_json: str) -
     return worksheet.get_all_records(default_blank="")
 
 
+def save_titles(spreadsheet_id: str, tab_name: str, titles: dict, sa_info_json: str):
+    """Schrijft beeldtitels naar kolom J. titles = {row_index: titel_str}"""
+    if not titles:
+        return
+    sa_info = json.loads(sa_info_json)
+    gc = _get_write_client(sa_info)
+    worksheet = gc.open_by_key(spreadsheet_id).worksheet(tab_name)
+    # Zorg dat kolom J een header heeft
+    headers = worksheet.row_values(1)
+    if len(headers) < 10 or headers[9] != "beeldtitel":
+        worksheet.update([["beeldtitel"]], "J1")
+    batch = [{"range": f"J{ri}", "values": [[t]]} for ri, t in titles.items()]
+    worksheet.batch_update(batch, value_input_option="RAW")
+
+
+def generate_image_titles(rows: list, api_key: str) -> dict:
+    """Genereert beeldtitels (max 6 woorden) via Claude Haiku. Geeft {row_idx: titel} terug."""
+    import anthropic
+    ac = anthropic.Anthropic(api_key=api_key)
+    results = {}
+    for row_idx, post in rows:
+        prompt = (
+            f"Schrijf een beeldtitel voor deze social media post. "
+            f"Maximaal 6 woorden. Alleen de titel, geen uitleg, geen aanhalingstekens.\n\n"
+            f"Platform: {post.get('platform', '')}\n"
+            f"Tekst: {post.get('caption', '')}"
+        )
+        msg = ac.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=30,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        title = msg.content[0].text.strip().strip('"').strip("'")
+        words = title.split()
+        results[row_idx] = " ".join(words[:6])
+    return results
+
+
 def save_statuses(spreadsheet_id: str, tab_name: str, updates: dict, sa_info_json: str):
     """Schrijft statuswijzigingen terug naar het tabblad. updates = {row_index: (status, opmerking)}"""
     sa_info = json.loads(sa_info_json)
@@ -615,6 +653,14 @@ def _build_approved_docx(bedrijfsnaam: str, approved_posts: list[dict]) -> bytes
             dag_run.bold = True
             dag_run.font.size = Pt(11)
 
+            beeldtitel = post.get("beeldtitel", "")
+            if beeldtitel:
+                bt_p = doc.add_paragraph()
+                bt_p.add_run("🖼️ Beeldtitel: ").bold = True
+                bt_run = bt_p.add_run(beeldtitel)
+                bt_run.font.color.rgb = color
+                bt_run.font.size = Pt(11)
+
             doc.add_paragraph(post.get("caption", ""))
 
             ht_p = doc.add_paragraph()
@@ -713,13 +759,19 @@ def render_approval_interface(posts, client_dict, spreadsheet_id, selected_tab, 
         name = post.get("bedrijfsnaam", "Onbekend")
         clients_in_week.setdefault(name, []).append((i, post))
 
-    # ── Session state: cur_updates = alle lokale overrides, pending = nog niet opgeslagen ──
-    state_key   = f"updates_{selected_tab}"
-    pending_key = f"pending_{selected_tab}"
+    # ── Session state: statussen + beeldtitels ───────────────────────────────
+    state_key    = f"updates_{selected_tab}"
+    pending_key  = f"pending_{selected_tab}"
+    titles_key   = f"titles_{selected_tab}"
+    ptitles_key  = f"ptitles_{selected_tab}"
     if state_key   not in st.session_state: st.session_state[state_key]   = {}
     if pending_key not in st.session_state: st.session_state[pending_key] = {}
-    cur_updates = st.session_state[state_key]
-    pending     = st.session_state[pending_key]
+    if titles_key  not in st.session_state: st.session_state[titles_key]  = {}
+    if ptitles_key not in st.session_state: st.session_state[ptitles_key] = {}
+    cur_updates   = st.session_state[state_key]
+    pending       = st.session_state[pending_key]
+    cur_titles    = st.session_state[titles_key]
+    pending_titles = st.session_state[ptitles_key]
 
     def _eff(row_idx, post):
         ov = cur_updates.get(row_idx)
@@ -850,10 +902,26 @@ def render_approval_interface(posts, client_dict, spreadsheet_id, selected_tab, 
                         f'<div style="background:#f8f8f8;border-left:3px solid {color};'
                         f'padding:8px 12px;border-radius:0 8px 8px 0;font-size:13px;white-space:pre-wrap;">'
                         f'{post.get("caption","")}</div>'
-                        f'<p style="font-size:11px;color:{color};margin:3px 0 6px 0;">'
+                        f'<p style="font-size:11px;color:{color};margin:3px 0 4px 0;">'
                         f'{post.get("hashtags","")}</p>',
                         unsafe_allow_html=True,
                     )
+                    current_title = cur_titles.get(row_idx) or post.get("beeldtitel", "")
+                    new_title = st.text_input(
+                        "Beeldtitel",
+                        value=current_title,
+                        key=f"title_{row_idx}",
+                        placeholder="Max 6 woorden voor de afbeelding...",
+                        label_visibility="collapsed",
+                    )
+                    word_count = len(new_title.split()) if new_title.strip() else 0
+                    if word_count > 6:
+                        st.caption(f"⚠️ {word_count}/6 woorden — wordt ingekort bij opslaan")
+                    elif new_title.strip():
+                        st.caption(f"🖼️ {word_count}/6 woorden")
+                    if new_title != current_title:
+                        cur_titles[row_idx]    = new_title
+                        pending_titles[row_idx] = " ".join(new_title.split()[:6])
 
                 with col_ctrl:
                     # Gekleurde status-badge
@@ -898,22 +966,47 @@ def render_approval_interface(posts, client_dict, spreadsheet_id, selected_tab, 
 
         # ── Actieknoppen onderaan de review ───────────────────────────────────
         client_row_indices = {ri for ri, _ in rows}
-        client_pending = {ri: v for ri, v in pending.items() if ri in client_row_indices}
+        client_pending        = {ri: v for ri, v in pending.items()        if ri in client_row_indices}
+        client_pending_titles = {ri: v for ri, v in pending_titles.items() if ri in client_row_indices}
+        has_pending = bool(client_pending or client_pending_titles)
 
-        col_save, col_regen, col_dl, col_mail = st.columns(4)
+        col_save, col_gen, col_regen, col_dl, col_mail = st.columns(5)
 
         with col_save:
             if st.button(
-                f"💾 Opslaan ({len(client_pending)})" if client_pending else "💾 Opgeslagen",
+                f"💾 Opslaan ({len(client_pending) + len(client_pending_titles)})" if has_pending else "💾 Opgeslagen",
                 key=f"save_{selected_client}",
-                disabled=not client_pending,
+                disabled=not has_pending,
                 use_container_width=True,
                 type="primary",
             ):
-                save_statuses(spreadsheet_id, selected_tab, client_pending, sa_json)
-                for ri in client_pending:
-                    pending.pop(ri, None)
+                if client_pending:
+                    save_statuses(spreadsheet_id, selected_tab, client_pending, sa_json)
+                    for ri in client_pending:
+                        pending.pop(ri, None)
+                if client_pending_titles:
+                    save_titles(spreadsheet_id, selected_tab, client_pending_titles, sa_json)
+                    for ri in client_pending_titles:
+                        pending_titles.pop(ri, None)
                 st.success("✓ Opgeslagen naar Google Sheets")
+
+        with col_gen:
+            if st.button(
+                "🎨 Genereer titels",
+                key=f"gen_titles_{selected_client}",
+                use_container_width=True,
+                help="Claude schrijft beeldtitels voor alle posts van deze klant",
+            ):
+                api_key = os.getenv("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY", "")
+                if not api_key:
+                    st.error("ANTHROPIC_API_KEY ontbreekt.")
+                else:
+                    with st.spinner("Titels genereren..."):
+                        generated = generate_image_titles(rows, api_key)
+                    for ri, title in generated.items():
+                        cur_titles[ri]    = title
+                        pending_titles[ri] = title
+                    st.success(f"✓ {len(generated)} titels gegenereerd — klik Opslaan om te bewaren")
 
         with col_regen:
             if st.button(
