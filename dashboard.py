@@ -428,7 +428,6 @@ with tab_klanten:
 
 WRITE_SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive",
 ]
 
 STATUS_OPTIONS  = ["concept", "goedgekeurd", "afgewezen"]
