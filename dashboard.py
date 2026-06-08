@@ -648,6 +648,45 @@ def build_export_zip(posts: list[dict], tab_name: str) -> bytes:
     return buf.getvalue()
 
 
+def _send_studio_mail(bedrijfsnaam: str, week_label: str, docx_bytes: bytes, api_key: str) -> str:
+    """Stuurt mail naar studio met Word-bijlage via SendGrid. Geeft foutmelding terug of ''."""
+    import base64 as _b64
+    from sendgrid import SendGridAPIClient
+    from sendgrid.helpers.mail import (
+        Mail, Attachment, FileContent, FileName, FileType, Disposition,
+    )
+
+    subject = f"{bedrijfsnaam} | Je kunt aan de slag met de afbeeldingen"
+    body = (
+        f"Hey,\n\n"
+        f"We hebben de teksten voor {bedrijfsnaam} voor {week_label} goedgekeurd. "
+        f"Kun je aan de slag met de afbeeldingen voor deze klant?\n\n"
+        f"Alvast bedankt!"
+    )
+
+    message = Mail(
+        from_email="noreply@topmediagroep.nl",
+        to_emails="studio@topmediagroep.nl",
+        subject=subject,
+        plain_text_content=body,
+    )
+
+    attachment = Attachment(
+        file_content=FileContent(_b64.b64encode(docx_bytes).decode()),
+        file_name=FileName(f"{bedrijfsnaam} - Definitief {week_label}.docx"),
+        file_type=FileType("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+        disposition=Disposition("attachment"),
+    )
+    message.attachment = attachment
+
+    try:
+        sg = SendGridAPIClient(api_key)
+        sg.send(message)
+        return ""
+    except Exception as e:
+        return str(e)
+
+
 def _sa_info_json() -> str | None:
     b64 = os.getenv("GOOGLE_SERVICE_ACCOUNT_B64") or st.secrets.get("GOOGLE_SERVICE_ACCOUNT_B64")
     if not b64:
@@ -929,17 +968,26 @@ def render_approval_interface(posts, client_dict, spreadsheet_id, selected_tab, 
                 )
 
         with col_mail:
-            from urllib.parse import quote
+            client_posts_all = [p for _, p in rows]
+            approved_for_mail = [p for p in client_posts_all if p.get("status") == "goedgekeurd"]
+            sg_key = os.getenv("SENDGRID_API_KEY") or st.secrets.get("SENDGRID_API_KEY", "")
             week_label_mail = selected_tab.replace("Posts_", "").replace("_W", " week ")
-            subject = quote(f"{selected_client} | Je kunt aan de slag met de afbeeldingen")
-            body = quote(
-                f"Hey,\n\n"
-                f"We hebben de teksten voor {selected_client} voor {week_label_mail} goedgekeurd. "
-                f"Kun je aan de slag met de afbeeldingen voor deze klant?\n\n"
-                f"Alvast bedankt!"
-            )
-            mailto = f"mailto:studio@topmediagroep.nl?subject={subject}&body={body}"
-            st.link_button("📧 Mail studio", mailto, use_container_width=True)
+            if not approved_for_mail or not sg_key:
+                st.button("📧 Mail studio", key=f"mail_{selected_client}",
+                          disabled=True, use_container_width=True,
+                          help="Goedkeur posts en voeg SENDGRID_API_KEY toe aan secrets")
+            else:
+                if st.button("📧 Mail studio", key=f"mail_{selected_client}",
+                             use_container_width=True):
+                    docx_bytes = _build_approved_docx(selected_client, approved_for_mail)
+                    with st.spinner("Mail versturen..."):
+                        err = _send_studio_mail(
+                            selected_client, week_label_mail, docx_bytes, sg_key
+                        )
+                    if err:
+                        st.error(f"Fout: {err}")
+                    else:
+                        st.success("✓ Mail verstuurd naar studio@topmediagroep.nl")
 
 
 with tab_goedkeuring:
