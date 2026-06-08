@@ -249,8 +249,23 @@ st.markdown(f"""
 }}
 
 /* ── Basistypografie ───────────────────────────────────────────────────── */
-html, body, [class^="css"], [class*=" css"], .stApp, .stMarkdown, p, span, div, label {{
+/* Let op: NIET op alle span/div toepassen — Streamlit gebruikt voor pijltjes en
+   icoontjes (bv. de pijl van een expander) een icoon-lettertype dat tekst zoals
+   "keyboard_arrow_right" omzet naar een glyph. Een te brede font-override breekt
+   dat en toont de letterlijke tekst, wat overlap met labels veroorzaakt. */
+html, body, .stApp,
+.stMarkdown, .stMarkdown p, .stMarkdown li, .stMarkdown span:not([class*="material"]),
+.stCaption, .stText, p, label,
+.stButton button, .stDownloadButton button, .stLinkButton a,
+input, textarea, select,
+[data-testid="stMetricLabel"], [data-testid="stMetricValue"],
+[data-testid="stWidgetLabel"] {{
     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif !important;
+}}
+/* Icoon-lettertypes van Streamlit met rust laten */
+[data-testid*="Icon"], [class*="material-symbols"], [class*="MaterialSymbols"],
+.stApp [class*="icon"] {{
+    font-family: 'Material Symbols Rounded', 'Material Icons' !important;
 }}
 .stApp {{
     background: var(--brand-canvas);
