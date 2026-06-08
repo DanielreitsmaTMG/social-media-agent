@@ -474,12 +474,14 @@ def save_titles(spreadsheet_id: str, tab_name: str, titles: dict, sa_info_json: 
     sa_info = json.loads(sa_info_json)
     gc = _get_write_client(sa_info)
     worksheet = gc.open_by_key(spreadsheet_id).worksheet(tab_name)
-    # Zorg dat kolom J een header heeft
+    batch = []
     headers = worksheet.row_values(1)
     if len(headers) < 10 or headers[9] != "beeldtitel":
-        worksheet.update([["beeldtitel"]], "J1")
-    batch = [{"range": f"J{ri}", "values": [[t]]} for ri, t in titles.items()]
-    worksheet.batch_update(batch, value_input_option="RAW")
+        batch.append({"range": "J1", "values": [["beeldtitel"]]})
+    for ri, t in titles.items():
+        batch.append({"range": f"J{ri}", "values": [[t]]})
+    if batch:
+        worksheet.batch_update(batch, value_input_option="RAW")
 
 
 def generate_image_titles(rows: list, api_key: str) -> dict:
