@@ -750,10 +750,14 @@ def render_approval_interface(spreadsheet_id, sa_json):
     st.divider()
 
     # ── Layout: navigator links, review rechts ────────────────────────────────
-    sorted_names = sorted(
-        clients_in_week,
-        key=lambda n: (_progress(clients_in_week[n])[0], n),
-    )
+    # Volgorde eenmalig bepalen per tab zodat de lijst niet springt tijdens review
+    sort_key = f"sort_{selected_tab}"
+    if sort_key not in st.session_state:
+        st.session_state[sort_key] = sorted(
+            clients_in_week,
+            key=lambda n: (_progress(clients_in_week[n])[0], n),
+        )
+    sorted_names = [n for n in st.session_state[sort_key] if n in clients_in_week]
 
     col_nav, col_review = st.columns([1, 3], gap="large")
 
@@ -767,6 +771,7 @@ def render_approval_interface(spreadsheet_id, sa_json):
                 else f"{'🔴' if is_urgent else '⏳'} {n}"
             ),
             label_visibility="collapsed",
+            key=f"radio_client_{selected_tab}",
         )
 
     with col_review:
@@ -822,18 +827,22 @@ def render_approval_interface(spreadsheet_id, sa_json):
                     )
 
                 with col_ctrl:
-                    st.markdown(
-                        f'<div style="text-align:center;padding:3px 8px;background:{s_color}18;'
-                        f'border:1px solid {s_color};border-radius:8px;font-size:12px;'
-                        f'font-weight:700;color:{s_color};margin-bottom:8px;">{s_label}</div>',
-                        unsafe_allow_html=True,
-                    )
                     col_ok, col_rej_btn = st.columns(2)
                     with col_ok:
-                        if st.button("✅", key=f"ok_{row_idx}", use_container_width=True):
+                        if st.button(
+                            "✅ Goed" if cur_status == "goedgekeurd" else "✅",
+                            key=f"ok_{row_idx}",
+                            use_container_width=True,
+                            type="primary" if cur_status == "goedgekeurd" else "secondary",
+                        ):
                             cur_updates[row_idx] = ("goedgekeurd", "")
                     with col_rej_btn:
-                        if st.button("❌", key=f"rej_{row_idx}", use_container_width=True):
+                        if st.button(
+                            "❌ Af" if cur_status == "afgewezen" else "❌",
+                            key=f"rej_{row_idx}",
+                            use_container_width=True,
+                            type="primary" if cur_status == "afgewezen" else "secondary",
+                        ):
                             cur_updates[row_idx] = ("afgewezen", _note_val(row_idx, post))
 
                     if cur_status == "afgewezen":
