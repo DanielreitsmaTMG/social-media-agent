@@ -23,10 +23,8 @@ from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 import gspread
-import requests
 import streamlit as st
 import streamlit.components.v1 as components
-from bs4 import BeautifulSoup  # nog gebruikt voor logo-scraping
 from google.oauth2.service_account import Credentials as WriteCredentials
 from google.oauth2.service_account import Credentials
 from dotenv import load_dotenv
@@ -105,28 +103,12 @@ def _format_countdown(delta: timedelta) -> str:
     return f"{hours}u {minutes}m"
 
 
-SCRAPE_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    )
-}
-
-
 def get_profile_image(website_url: str) -> str:
     """Geeft Google favicon-URL terug — geen scraping, altijd instant."""
     if not website_url:
         return ""
     domain = urlparse(website_url).netloc
     return f"https://www.google.com/s2/favicons?domain={domain}&sz=128" if domain else ""
-
-
-def _extract_handle(url: str) -> str:
-    """Haalt de gebruikersnaam/paginanaam uit een social media URL."""
-    if not url:
-        return ""
-    parts = [p for p in urlparse(url).path.strip("/").split("/") if p]
-    return parts[0] if parts else ""
 
 
 def _client_follower_counts(client: dict) -> dict:
@@ -189,30 +171,6 @@ def load_clients() -> list[dict]:
         active.append(row)
 
     return active
-
-
-def _platform_summary_text(client: dict) -> str:
-    parts = []
-    for platform, label in PLATFORM_LABELS.items():
-        count = client.get(f"{platform}_posts_pw", 0)
-        if count:
-            parts.append(f"{label} {count}x")
-    return "  ·  ".join(parts) if parts else "—"
-
-
-def _platform_summary_html(client: dict) -> str:
-    parts = []
-    for platform, label in PLATFORM_LABELS.items():
-        count = client.get(f"{platform}_posts_pw", 0)
-        if count:
-            icon = PLATFORM_ICON_HTML[platform]
-            color = PLATFORM_COLORS[platform]
-            parts.append(
-                f'<span style="margin-right:16px;">{icon}'
-                f'<span style="color:{color};font-weight:600;">{label}</span>'
-                f' <span style="color:#666;">{count}x/week</span></span>'
-            )
-    return "".join(parts) if parts else "—"
 
 
 def _total_posts_pw(client: dict) -> int:
@@ -966,26 +924,6 @@ def _build_approved_docx(bedrijfsnaam: str, approved_posts: list[dict]) -> bytes
     return buf.getvalue()
 
 
-def build_export_zip(posts: list[dict], tab_name: str) -> bytes:
-    """Genereert een zip met één Word-document per klant (alleen goedgekeurde posts)."""
-    clients_posts: dict[str, list[dict]] = {}
-    for post in posts:
-        if post.get("status") != "goedgekeurd":
-            continue
-        name = post.get("bedrijfsnaam", "Onbekend")
-        clients_posts.setdefault(name, []).append(post)
-
-    week_label = tab_name.replace("Posts_", "").replace("_W", "_Week")
-
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for name, client_posts in clients_posts.items():
-            docx_bytes = _build_approved_docx(name, client_posts)
-            filename = f"{name} - Definitief {week_label}.docx"
-            zf.writestr(filename, docx_bytes)
-    return buf.getvalue()
-
-
 def _sa_info_json() -> str | None:
     b64 = os.getenv("GOOGLE_SERVICE_ACCOUNT_B64") or st.secrets.get("GOOGLE_SERVICE_ACCOUNT_B64")
     if not b64:
@@ -1393,6 +1331,27 @@ def render_approval_interface(posts, client_dict, spreadsheet_id, selected_tab, 
         client_pending_titles = {ri: v for ri, v in pending_titles.items() if ri in client_row_indices}
         has_pending = bool(client_pending or client_pending_titles)
 
+        # ── Eénmalig de Word-export bouwen, hergebruikt door Download én Mail ──
+        # (anders werd hetzelfde document twee keer opgebouwd bij elke klik)
+        approved_posts = [
+            {**p, "beeldtitel": cur_titles.get(ri) or p.get("beeldtitel", "")}
+            for ri, p in rows if _eff(ri, p) == "goedgekeurd"
+        ]
+        approved_key = tuple(
+            (ri, cur_titles.get(ri) or p.get("beeldtitel", ""))
+            for ri, p in rows if _eff(ri, p) == "goedgekeurd"
+        )
+        docx_cache_key = f"docx_{selected_tab}_{selected_client}"
+        cached = st.session_state.get(docx_cache_key)
+        if approved_posts and (cached is None or cached[0] != approved_key):
+            docx_bytes_shared = _build_approved_docx(selected_client, approved_posts)
+            st.session_state[docx_cache_key] = (approved_key, docx_bytes_shared)
+        elif approved_posts:
+            docx_bytes_shared = cached[1]
+        else:
+            docx_bytes_shared = None
+            st.session_state.pop(docx_cache_key, None)
+
         col_save, col_gen, col_regen, col_dl, col_mail = st.columns(5)
 
         with col_save:
@@ -1468,19 +1427,13 @@ def render_approval_interface(posts, client_dict, spreadsheet_id, selected_tab, 
                         st.success(f"✓ {count} posts herschreven")
 
         with col_dl:
-            client_posts = [p for _, p in rows]
-            approved_posts = [
-                {**p, "beeldtitel": cur_titles.get(ri) or p.get("beeldtitel", "")}
-                for ri, p in rows if _eff(ri, p) == "goedgekeurd"
-            ]
             if not approved_posts:
                 st.button("📄 Download", key=f"dl_{selected_client}", disabled=True, use_container_width=True)
             else:
-                docx_bytes = _build_approved_docx(selected_client, approved_posts)
                 week_label = selected_tab.replace("Posts_", "").replace("_W", "_Week")
                 st.download_button(
                     label=f"📄 Download ({len(approved_posts)})",
-                    data=docx_bytes,
+                    data=docx_bytes_shared,
                     file_name=f"{selected_client} - Definitief {week_label}.docx",
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                     key=f"dl_btn_{selected_client}",
@@ -1499,10 +1452,6 @@ def render_approval_interface(posts, client_dict, spreadsheet_id, selected_tab, 
             )
             mailto = f"mailto:studio@topmediagroep.nl?subject={subject}&body={body_txt}"
 
-            mail_approved = [
-                {**p, "beeldtitel": cur_titles.get(ri) or p.get("beeldtitel", "")}
-                for ri, p in rows if _eff(ri, p) == "goedgekeurd"
-            ]
             # Let op: dit is een <button> in een eigen iframe (via components.html),
             # dus de globale .stButton-CSS (merklettertype, kleuren, randen) bereikt
             # 'm niet — we stylen 'm hier expliciet identiek aan st.button, en
@@ -1520,10 +1469,8 @@ def render_approval_interface(posts, client_dict, spreadsheet_id, selected_tab, 
                     html, body { margin:0; padding:0; background:transparent; overflow:hidden; }
                 </style>
             """
-            if mail_approved:
-                docx_b64 = base64.b64encode(
-                    _build_approved_docx(selected_client, mail_approved)
-                ).decode()
+            if approved_posts:
+                docx_b64 = base64.b64encode(docx_bytes_shared).decode()
                 filename = f"{selected_client} - Definitief {week_label_mail}.docx"
                 components.html(f"""
                 {_iframe_reset}
