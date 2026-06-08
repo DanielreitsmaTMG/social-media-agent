@@ -661,20 +661,9 @@ def _sa_info_json() -> str | None:
 
 
 @st.fragment
-def render_approval_interface(spreadsheet_id, sa_json):
-    # ── Week selector ─────────────────────────────────────────────────────────
-    tabs = load_post_tabs(spreadsheet_id, sa_json)
-    if not tabs:
-        st.info("Nog geen posts beschikbaar. Voer eerst de pipeline uit.")
-        return
+def render_approval_interface(posts, client_dict, spreadsheet_id, selected_tab, sa_json):
+    # Data is al geladen buiten de fragment — geen API-calls bij klikken
 
-    selected_tab = st.selectbox(
-        "Selecteer een week",
-        tabs,
-        format_func=lambda t: t.replace("Posts_", "").replace("_W", " · Week "),
-    )
-
-    posts = load_posts_from_tab(spreadsheet_id, selected_tab, sa_json)
     if not posts:
         st.warning("Geen posts gevonden in dit tabblad.")
         return
@@ -685,11 +674,13 @@ def render_approval_interface(spreadsheet_id, sa_json):
         name = post.get("bedrijfsnaam", "Onbekend")
         clients_in_week.setdefault(name, []).append((i, post))
 
-    # ── Session state voor lokale statuswijzigingen ───────────────────────────
-    state_key = f"updates_{selected_tab}"
-    if state_key not in st.session_state:
-        st.session_state[state_key] = {}
+    # ── Session state: cur_updates = alle lokale overrides, pending = nog niet opgeslagen ──
+    state_key   = f"updates_{selected_tab}"
+    pending_key = f"pending_{selected_tab}"
+    if state_key   not in st.session_state: st.session_state[state_key]   = {}
+    if pending_key not in st.session_state: st.session_state[pending_key] = {}
     cur_updates = st.session_state[state_key]
+    pending     = st.session_state[pending_key]
 
     def _eff(row_idx, post):
         ov = cur_updates.get(row_idx)
@@ -775,8 +766,7 @@ def render_approval_interface(spreadsheet_id, sa_json):
         )
 
     with col_review:
-        rows       = clients_in_week[selected_client]
-        client_dict = load_client_dict(spreadsheet_id, sa_json)
+        rows = clients_in_week[selected_client]
         pct, pct_label, pct_color = _progress(rows)
         n_app = sum(1 for ri, p in rows if _eff(ri, p) == "goedgekeurd")
         n_rej = sum(1 for ri, p in rows if _eff(ri, p) == "afgewezen")
@@ -827,23 +817,29 @@ def render_approval_interface(spreadsheet_id, sa_json):
                     )
 
                 with col_ctrl:
+                    # Gekleurde status-badge
+                    badge = {
+                        "goedgekeurd": ("#22c55e", "✅ Goedgekeurd"),
+                        "afgewezen":   ("#ef4444", "❌ Afgewezen"),
+                        "concept":     ("#f59e0b", "⏳ Concept"),
+                    }.get(cur_status, ("#999", cur_status))
+                    st.markdown(
+                        f'<div style="background:{badge[0]};color:#fff;font-weight:700;'
+                        f'text-align:center;border-radius:8px;padding:5px 8px;'
+                        f'font-size:12px;margin-bottom:8px;">{badge[1]}</div>',
+                        unsafe_allow_html=True,
+                    )
                     col_ok, col_rej_btn = st.columns(2)
                     with col_ok:
-                        if st.button(
-                            "✅ Goed" if cur_status == "goedgekeurd" else "✅",
-                            key=f"ok_{row_idx}",
-                            use_container_width=True,
-                            type="primary" if cur_status == "goedgekeurd" else "secondary",
-                        ):
+                        if st.button("✅", key=f"ok_{row_idx}", use_container_width=True,
+                                     disabled=cur_status == "goedgekeurd"):
                             cur_updates[row_idx] = ("goedgekeurd", "")
+                            pending[row_idx]     = ("goedgekeurd", "")
                     with col_rej_btn:
-                        if st.button(
-                            "❌ Af" if cur_status == "afgewezen" else "❌",
-                            key=f"rej_{row_idx}",
-                            use_container_width=True,
-                            type="primary" if cur_status == "afgewezen" else "secondary",
-                        ):
+                        if st.button("❌", key=f"rej_{row_idx}", use_container_width=True,
+                                     disabled=cur_status == "afgewezen"):
                             cur_updates[row_idx] = ("afgewezen", _note_val(row_idx, post))
+                            pending[row_idx]     = ("afgewezen", _note_val(row_idx, post))
 
                     if cur_status == "afgewezen":
                         typed = st.text_input(
@@ -854,6 +850,7 @@ def render_approval_interface(spreadsheet_id, sa_json):
                             label_visibility="collapsed",
                         )
                         cur_updates[row_idx] = ("afgewezen", typed)
+                        pending[row_idx]     = ("afgewezen", typed)
 
                 st.markdown(
                     "<hr style='margin:4px 0 10px 0;border:none;border-top:1px solid #eee;'>",
@@ -862,22 +859,21 @@ def render_approval_interface(spreadsheet_id, sa_json):
 
         # ── Actieknoppen onderaan de review ───────────────────────────────────
         client_row_indices = {ri for ri, _ in rows}
-        pending_saves = {ri: v for ri, v in cur_updates.items() if ri in client_row_indices}
+        client_pending = {ri: v for ri, v in pending.items() if ri in client_row_indices}
 
         col_save, col_regen, col_dl = st.columns(3)
 
         with col_save:
             if st.button(
-                f"💾 Opslaan ({len(pending_saves)} wijzigingen)" if pending_saves else "💾 Opslaan",
+                f"💾 Opslaan ({len(client_pending)})" if client_pending else "💾 Opgeslagen",
                 key=f"save_{selected_client}",
-                disabled=not pending_saves,
+                disabled=not client_pending,
                 use_container_width=True,
                 type="primary",
             ):
-                save_statuses(spreadsheet_id, selected_tab, pending_saves, sa_json)
-                for ri in pending_saves:
-                    cur_updates.pop(ri, None)
-                load_posts_from_tab.clear()
+                save_statuses(spreadsheet_id, selected_tab, client_pending, sa_json)
+                for ri in client_pending:
+                    pending.pop(ri, None)
                 st.success("✓ Opgeslagen naar Google Sheets")
 
         with col_regen:
@@ -891,10 +887,10 @@ def render_approval_interface(spreadsheet_id, sa_json):
                 if not api_key:
                     st.error("ANTHROPIC_API_KEY ontbreekt.")
                 else:
-                    if pending_saves:
-                        save_statuses(spreadsheet_id, selected_tab, pending_saves, sa_json)
-                        for ri in pending_saves:
-                            cur_updates.pop(ri, None)
+                    if client_pending:
+                        save_statuses(spreadsheet_id, selected_tab, client_pending, sa_json)
+                        for ri in client_pending:
+                            pending.pop(ri, None)
                     load_posts_from_tab.clear()
                     fresh = load_posts_from_tab(spreadsheet_id, selected_tab, sa_json)
                     with st.spinner(f"{n_rej} posts regenereren..."):
@@ -904,6 +900,12 @@ def render_approval_interface(spreadsheet_id, sa_json):
                             filter_bedrijfsnaam=selected_client,
                         )
                         load_posts_from_tab.clear()
+                        # Ververs de posts in session state na regeneratie
+                        st.session_state[f"posts_{selected_tab}"] = load_posts_from_tab(
+                            spreadsheet_id, selected_tab, sa_json
+                        )
+                        st.session_state[state_key]   = {}
+                        st.session_state[pending_key] = {}
                     if err:
                         st.error(f"Fout: {err}")
                     else:
@@ -936,5 +938,22 @@ with tab_goedkeuring:
     if not spreadsheet_id or not sa_json:
         st.error("Credentials ontbreken.")
     else:
-        render_approval_interface(spreadsheet_id, sa_json)
+        tabs = load_post_tabs(spreadsheet_id, sa_json)
+        if not tabs:
+            st.info("Nog geen posts beschikbaar. Voer eerst de pipeline uit.")
+        else:
+            selected_tab = st.selectbox(
+                "Selecteer een week",
+                tabs,
+                format_func=lambda t: t.replace("Posts_", "").replace("_W", " · Week "),
+            )
+            # Laad posts — gebruik session state cache na regeneratie
+            posts_ss_key = f"posts_{selected_tab}"
+            if posts_ss_key in st.session_state:
+                posts = st.session_state.pop(posts_ss_key)
+            else:
+                posts = load_posts_from_tab(spreadsheet_id, selected_tab, sa_json)
+
+            client_dict = load_client_dict(spreadsheet_id, sa_json)
+            render_approval_interface(posts, client_dict, spreadsheet_id, selected_tab, sa_json)
 
