@@ -859,20 +859,21 @@ def render_approval_interface(posts, client_dict, spreadsheet_id, selected_tab, 
     with col_review:
         rows = clients_in_week[selected_client]
 
-        # ── Auto-genereer beeldtitels bij eerste weergave van deze klant ────
+        # ── Auto-genereer beeldtitels voor posts zonder titel (eenmalig) ────
+        api_key = os.getenv("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY", "")
         gen_flag = f"titles_generated_{selected_tab}_{selected_client}"
         if gen_flag not in st.session_state:
             st.session_state[gen_flag] = True
-            api_key = os.getenv("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY", "")
             if api_key:
                 missing = [(ri, p) for ri, p in rows
                            if not cur_titles.get(ri) and not p.get("beeldtitel", "")]
                 if missing:
                     with st.spinner("Beeldtitels genereren..."):
                         generated = generate_image_titles(missing, api_key)
+                        save_titles(spreadsheet_id, selected_tab, generated, sa_json)
+                        load_posts_from_tab.clear()
                     for ri, title in generated.items():
-                        cur_titles[ri]     = title
-                        pending_titles[ri] = title
+                        cur_titles[ri] = title
 
         pct, pct_label, pct_color = _progress(rows)
         n_app = sum(1 for ri, p in rows if _eff(ri, p) == "goedgekeurd")
@@ -1019,11 +1020,11 @@ def render_approval_interface(posts, client_dict, spreadsheet_id, selected_tab, 
                 else:
                     with st.spinner("Titels genereren..."):
                         generated = generate_image_titles(rows, api_key)
+                        save_titles(spreadsheet_id, selected_tab, generated, sa_json)
+                        load_posts_from_tab.clear()
                     for ri, title in generated.items():
-                        cur_titles[ri]     = title
-                        pending_titles[ri] = title
-                    st.session_state.pop(gen_flag, None)
-                    st.success(f"✓ {len(generated)} titels vernieuwd")
+                        cur_titles[ri] = title
+                    st.success(f"✓ {len(generated)} titels vernieuwd en opgeslagen")
 
         with col_regen:
             if st.button(
