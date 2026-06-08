@@ -858,6 +858,22 @@ def render_approval_interface(posts, client_dict, spreadsheet_id, selected_tab, 
 
     with col_review:
         rows = clients_in_week[selected_client]
+
+        # ── Auto-genereer beeldtitels bij eerste weergave van deze klant ────
+        gen_flag = f"titles_generated_{selected_tab}_{selected_client}"
+        if gen_flag not in st.session_state:
+            st.session_state[gen_flag] = True
+            api_key = os.getenv("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY", "")
+            if api_key:
+                missing = [(ri, p) for ri, p in rows
+                           if not cur_titles.get(ri) and not p.get("beeldtitel", "")]
+                if missing:
+                    with st.spinner("Beeldtitels genereren..."):
+                        generated = generate_image_titles(missing, api_key)
+                    for ri, title in generated.items():
+                        cur_titles[ri]     = title
+                        pending_titles[ri] = title
+
         pct, pct_label, pct_color = _progress(rows)
         n_app = sum(1 for ri, p in rows if _eff(ri, p) == "goedgekeurd")
         n_rej = sum(1 for ri, p in rows if _eff(ri, p) == "afgewezen")
@@ -992,10 +1008,10 @@ def render_approval_interface(posts, client_dict, spreadsheet_id, selected_tab, 
 
         with col_gen:
             if st.button(
-                "🎨 Genereer titels",
+                "🎨 Vernieuw titels",
                 key=f"gen_titles_{selected_client}",
                 use_container_width=True,
-                help="Claude schrijft beeldtitels voor alle posts van deze klant",
+                help="Laat Claude nieuwe beeldtitels schrijven voor alle posts",
             ):
                 api_key = os.getenv("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY", "")
                 if not api_key:
@@ -1004,9 +1020,10 @@ def render_approval_interface(posts, client_dict, spreadsheet_id, selected_tab, 
                     with st.spinner("Titels genereren..."):
                         generated = generate_image_titles(rows, api_key)
                     for ri, title in generated.items():
-                        cur_titles[ri]    = title
+                        cur_titles[ri]     = title
                         pending_titles[ri] = title
-                    st.success(f"✓ {len(generated)} titels gegenereerd — klik Opslaan om te bewaren")
+                    st.session_state.pop(gen_flag, None)
+                    st.success(f"✓ {len(generated)} titels vernieuwd")
 
         with col_regen:
             if st.button(
@@ -1045,7 +1062,10 @@ def render_approval_interface(posts, client_dict, spreadsheet_id, selected_tab, 
 
         with col_dl:
             client_posts = [p for _, p in rows]
-            approved_posts = [p for ri, p in rows if _eff(ri, p) == "goedgekeurd"]
+            approved_posts = [
+                {**p, "beeldtitel": cur_titles.get(ri) or p.get("beeldtitel", "")}
+                for ri, p in rows if _eff(ri, p) == "goedgekeurd"
+            ]
             if not approved_posts:
                 st.button("📄 Download", key=f"dl_{selected_client}", disabled=True, use_container_width=True)
             else:
