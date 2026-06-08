@@ -368,6 +368,16 @@ p, .stMarkdown, .stCaption, label {{
     color: var(--brand-ink) !important;
 }}
 
+/* ── Ingebedde HTML-knoppen (bv. "Mail studio") ────────────────────────── */
+/* components.html() rendert in een eigen iframe; zonder reset staat die
+   net even anders uitgelijnd dan een natieve st.button ernaast. */
+iframe[title="components.html"], iframe[data-testid="stIFrame"] {{
+    display: block;
+    border: none !important;
+    margin: 0 !important;
+    vertical-align: top;
+}}
+
 /* ── Tabs ──────────────────────────────────────────────────────────────── */
 .stTabs [data-baseweb="tab-list"] {{
     gap: 6px;
@@ -1055,31 +1065,39 @@ def _render_post_card(selected_tab, row_idx, post, color, client_dict, spreadshe
             pending_titles[row_idx] = " ".join(new_title.split()[:6])
 
     with col_ctrl:
-        # Gekleurde status-badge
-        badge = {
-            "goedgekeurd": ("#22c55e", "✅ Goedgekeurd"),
-            "afgewezen":   ("#ef4444", "❌ Afgewezen"),
-            "concept":     ("#f59e0b", "⏳ Concept"),
-        }.get(cur_status, ("#999", cur_status))
-        st.markdown(
-            f'<div style="background:{badge[0]};color:#fff;font-weight:700;'
-            f'text-align:center;border-radius:8px;padding:5px 8px;'
-            f'font-size:12px;margin-bottom:8px;">{badge[1]}</div>',
-            unsafe_allow_html=True,
-        )
+        # Gekleurde status-badge — in een placeholder zodat we 'm na een klik
+        # direct kunnen vervangen zonder de hele (sub)pagina opnieuw te laten
+        # draaien (dat gaf juist de "hapering" terug die we al hadden opgelost).
+        def _badge_html(status):
+            b = {
+                "goedgekeurd": ("#22c55e", "✅ Goedgekeurd"),
+                "afgewezen":   ("#ef4444", "❌ Afgewezen"),
+                "concept":     ("#f59e0b", "⏳ Concept"),
+            }.get(status, ("#999", status))
+            return (
+                f'<div style="background:{b[0]};color:#fff;font-weight:700;'
+                f'text-align:center;border-radius:8px;padding:5px 8px;'
+                f'font-size:12px;margin-bottom:8px;">{b[1]}</div>'
+            )
+
+        badge_slot = st.empty()
+        badge_slot.markdown(_badge_html(cur_status), unsafe_allow_html=True)
+
         col_ok, col_rej_btn = st.columns(2)
         with col_ok:
             if st.button("✅", key=f"ok_{row_idx}", use_container_width=True,
                          disabled=cur_status == "goedgekeurd"):
                 cur_updates[row_idx] = ("goedgekeurd", "")
                 pending[row_idx]     = ("goedgekeurd", "")
-                st.rerun(scope="fragment")
+                cur_status = "goedgekeurd"
+                badge_slot.markdown(_badge_html(cur_status), unsafe_allow_html=True)
         with col_rej_btn:
             if st.button("❌", key=f"rej_{row_idx}", use_container_width=True,
                          disabled=cur_status == "afgewezen"):
                 cur_updates[row_idx] = ("afgewezen", _eff_note(cur_updates, row_idx, post))
                 pending[row_idx]     = ("afgewezen", _eff_note(cur_updates, row_idx, post))
-                st.rerun(scope="fragment")
+                cur_status = "afgewezen"
+                badge_slot.markdown(_badge_html(cur_status), unsafe_allow_html=True)
 
         if cur_status == "afgewezen":
             typed = st.text_input(
@@ -1485,33 +1503,51 @@ def render_approval_interface(posts, client_dict, spreadsheet_id, selected_tab, 
                 {**p, "beeldtitel": cur_titles.get(ri) or p.get("beeldtitel", "")}
                 for ri, p in rows if _eff(ri, p) == "goedgekeurd"
             ]
+            # Let op: dit is een <button> in een eigen iframe (via components.html),
+            # dus de globale .stButton-CSS (merklettertype, kleuren, randen) bereikt
+            # 'm niet — we stylen 'm hier expliciet identiek aan st.button, en
+            # geven het iframe géén eigen marge/border zodat 'ie netjes uitlijnt
+            # met Download ernaast (zelfde hoogte, geen scrollbalk, géén canvas-rand).
+            _btn_base_css = """
+                width:100%; box-sizing:border-box; height:38.4px;
+                padding:0 16px; font-size:14px; font-weight:600;
+                border-radius:10px; font-family:'Plus Jakarta Sans',-apple-system,sans-serif;
+                white-space:nowrap; line-height:1; display:inline-flex;
+                align-items:center; justify-content:center; transition:all .12s ease;
+            """
+            _iframe_reset = """
+                <style>
+                    html, body { margin:0; padding:0; background:transparent; overflow:hidden; }
+                </style>
+            """
             if mail_approved:
                 docx_b64 = base64.b64encode(
                     _build_approved_docx(selected_client, mail_approved)
                 ).decode()
                 filename = f"{selected_client} - Definitief {week_label_mail}.docx"
                 components.html(f"""
+                {_iframe_reset}
                 <button onclick="(function(){{
                     var a=document.createElement('a');
                     a.href='data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,{docx_b64}';
                     a.download='{filename}';
                     a.click();
                     setTimeout(function(){{window.location.href='{mailto}';}},600);
-                }})()" style="
-                    width:100%;padding:6px 10px;font-size:14px;font-weight:400;
-                    background:#fff;color:#31333f;border:1px solid rgba(49,51,63,.2);
-                    border-radius:8px;cursor:pointer;font-family:sans-serif;
-                    white-space:nowrap;
-                ">📧 Mail studio</button>
-                """, height=40)
+                }})()" style="{_btn_base_css}
+                    background:#ffffff; color:#111827; border:1px solid #E5E7EB;
+                    cursor:pointer;
+                " onmouseover="this.style.borderColor='#4F46E5';this.style.color='#4F46E5';"
+                  onmouseout="this.style.borderColor='#E5E7EB';this.style.color='#111827';"
+                >📧&nbsp;Mail studio</button>
+                """, height=39)
             else:
-                components.html("""
-                <button disabled style="
-                    width:100%;padding:6px 10px;font-size:14px;font-weight:400;
-                    background:#f0f0f0;color:#aaa;border:1px solid #ddd;
-                    border-radius:8px;cursor:not-allowed;font-family:sans-serif;
-                ">📧 Mail studio</button>
-                """, height=40)
+                components.html(f"""
+                {_iframe_reset}
+                <button disabled style="{_btn_base_css}
+                    background:#F7F8FB; color:#9CA3AF; border:1px solid #E5E7EB;
+                    cursor:not-allowed;
+                ">📧&nbsp;Mail studio</button>
+                """, height=39)
 
 
 with tab_goedkeuring:
