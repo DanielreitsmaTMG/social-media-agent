@@ -24,6 +24,7 @@ from urllib.parse import urlparse
 import gspread
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 from bs4 import BeautifulSoup  # nog gebruikt voor logo-scraping
 from google.oauth2.service_account import Credentials as WriteCredentials
 from google.oauth2.service_account import Credentials
@@ -1083,17 +1084,48 @@ def render_approval_interface(posts, client_dict, spreadsheet_id, selected_tab, 
                 )
 
         with col_mail:
-            from urllib.parse import quote  # noqa
+            from urllib.parse import quote as _quote
             week_label_mail = selected_tab.replace("Posts_", "").replace("_W", " week ")
-            subject = quote(f"{selected_client} | Je kunt aan de slag met de afbeeldingen")
-            body = quote(
+            subject  = _quote(f"{selected_client} | Je kunt aan de slag met de afbeeldingen")
+            body_txt = _quote(
                 f"Hey,\n\n"
                 f"We hebben de teksten voor {selected_client} voor {week_label_mail} goedgekeurd. "
                 f"Kun je aan de slag met de afbeeldingen voor deze klant?\n\n"
                 f"Alvast bedankt!"
             )
-            mailto = f"mailto:studio@topmediagroep.nl?subject={subject}&body={body}"
-            st.link_button("📧 Mail studio", mailto, use_container_width=True)
+            mailto = f"mailto:studio@topmediagroep.nl?subject={subject}&body={body_txt}"
+
+            mail_approved = [
+                {**p, "beeldtitel": cur_titles.get(ri) or p.get("beeldtitel", "")}
+                for ri, p in rows if _eff(ri, p) == "goedgekeurd"
+            ]
+            if mail_approved:
+                docx_b64 = base64.b64encode(
+                    _build_approved_docx(selected_client, mail_approved)
+                ).decode()
+                filename = f"{selected_client} - Definitief {week_label_mail}.docx"
+                components.html(f"""
+                <button onclick="(function(){{
+                    var a=document.createElement('a');
+                    a.href='data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,{docx_b64}';
+                    a.download='{filename}';
+                    a.click();
+                    setTimeout(function(){{window.location.href='{mailto}';}},600);
+                }})()" style="
+                    width:100%;padding:6px 10px;font-size:14px;font-weight:400;
+                    background:#fff;color:#31333f;border:1px solid rgba(49,51,63,.2);
+                    border-radius:8px;cursor:pointer;font-family:sans-serif;
+                    white-space:nowrap;
+                ">📧 Mail studio</button>
+                """, height=40)
+            else:
+                components.html("""
+                <button disabled style="
+                    width:100%;padding:6px 10px;font-size:14px;font-weight:400;
+                    background:#f0f0f0;color:#aaa;border:1px solid #ddd;
+                    border-radius:8px;cursor:not-allowed;font-family:sans-serif;
+                ">📧 Mail studio</button>
+                """, height=40)
 
 
 with tab_goedkeuring:
