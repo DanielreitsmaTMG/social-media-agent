@@ -747,6 +747,105 @@ def _sa_info_json() -> str | None:
     return sa if sa else None
 
 
+def _eff_status(cur_updates, row_idx, post):
+    ov = cur_updates.get(row_idx)
+    return ov[0] if ov else post.get("status", "concept")
+
+
+def _eff_note(cur_updates, row_idx, post):
+    ov = cur_updates.get(row_idx)
+    return ov[1] if ov else post.get("opmerkingen", "")
+
+
+@st.fragment
+def _render_post_card(selected_tab, row_idx, post, color):
+    """Eigen mini-fragment per post: een klik op ✅/❌ rerendert alleen dít kaartje,
+    niet de hele klantweergave (metrics, navigator, alle andere posts)."""
+    state_key    = f"updates_{selected_tab}"
+    pending_key  = f"pending_{selected_tab}"
+    titles_key   = f"titles_{selected_tab}"
+    ptitles_key  = f"ptitles_{selected_tab}"
+    cur_updates    = st.session_state[state_key]
+    pending        = st.session_state[pending_key]
+    cur_titles     = st.session_state[titles_key]
+    pending_titles = st.session_state[ptitles_key]
+
+    cur_status = _eff_status(cur_updates, row_idx, post)
+
+    col_post, col_ctrl = st.columns([5, 3])
+
+    with col_post:
+        st.markdown(
+            f'<p style="font-weight:600;font-size:13px;margin:4px 0 2px 0;">'
+            f'📅 {post.get("dag","")} — {post.get("publicatiedatum","")}</p>'
+            f'<div style="background:#f8f8f8;border-left:3px solid {color};'
+            f'padding:8px 12px;border-radius:0 8px 8px 0;font-size:13px;white-space:pre-wrap;">'
+            f'{post.get("caption","")}</div>'
+            f'<p style="font-size:11px;color:{color};margin:3px 0 4px 0;">'
+            f'{post.get("hashtags","")}</p>',
+            unsafe_allow_html=True,
+        )
+        current_title = cur_titles.get(row_idx) or post.get("beeldtitel", "")
+        new_title = st.text_input(
+            "Beeldtitel",
+            value=current_title,
+            key=f"title_{row_idx}",
+            placeholder="Max 6 woorden voor de afbeelding...",
+            label_visibility="collapsed",
+        )
+        word_count = len(new_title.split()) if new_title.strip() else 0
+        if word_count > 6:
+            st.caption(f"⚠️ {word_count}/6 woorden — wordt ingekort bij opslaan")
+        elif new_title.strip():
+            st.caption(f"🖼️ {word_count}/6 woorden")
+        if new_title != current_title:
+            cur_titles[row_idx]    = new_title
+            pending_titles[row_idx] = " ".join(new_title.split()[:6])
+
+    with col_ctrl:
+        # Gekleurde status-badge
+        badge = {
+            "goedgekeurd": ("#22c55e", "✅ Goedgekeurd"),
+            "afgewezen":   ("#ef4444", "❌ Afgewezen"),
+            "concept":     ("#f59e0b", "⏳ Concept"),
+        }.get(cur_status, ("#999", cur_status))
+        st.markdown(
+            f'<div style="background:{badge[0]};color:#fff;font-weight:700;'
+            f'text-align:center;border-radius:8px;padding:5px 8px;'
+            f'font-size:12px;margin-bottom:8px;">{badge[1]}</div>',
+            unsafe_allow_html=True,
+        )
+        col_ok, col_rej_btn = st.columns(2)
+        with col_ok:
+            if st.button("✅", key=f"ok_{row_idx}", use_container_width=True,
+                         disabled=cur_status == "goedgekeurd"):
+                cur_updates[row_idx] = ("goedgekeurd", "")
+                pending[row_idx]     = ("goedgekeurd", "")
+                st.rerun(scope="fragment")
+        with col_rej_btn:
+            if st.button("❌", key=f"rej_{row_idx}", use_container_width=True,
+                         disabled=cur_status == "afgewezen"):
+                cur_updates[row_idx] = ("afgewezen", _eff_note(cur_updates, row_idx, post))
+                pending[row_idx]     = ("afgewezen", _eff_note(cur_updates, row_idx, post))
+                st.rerun(scope="fragment")
+
+        if cur_status == "afgewezen":
+            typed = st.text_input(
+                "Reden",
+                value=_eff_note(cur_updates, row_idx, post),
+                key=f"note_{row_idx}",
+                placeholder="Wat moet er anders?",
+                label_visibility="collapsed",
+            )
+            cur_updates[row_idx] = ("afgewezen", typed)
+            pending[row_idx]     = ("afgewezen", typed)
+
+    st.markdown(
+        "<hr style='margin:4px 0 10px 0;border:none;border-top:1px solid #eee;'>",
+        unsafe_allow_html=True,
+    )
+
+
 @st.fragment
 def render_approval_interface(posts, client_dict, spreadsheet_id, selected_tab, sa_json):
     # Data is al geladen buiten de fragment — geen API-calls bij klikken
@@ -908,80 +1007,7 @@ def render_approval_interface(posts, client_dict, spreadsheet_id, selected_tab, 
             )
 
             for row_idx, post in platform_rows:
-                cur_status = _eff(row_idx, post)
-                s_color    = STATUS_COLORS.get(cur_status, "#666")
-                s_label    = STATUS_LABELS.get(cur_status, cur_status)
-
-                col_post, col_ctrl = st.columns([5, 3])
-
-                with col_post:
-                    st.markdown(
-                        f'<p style="font-weight:600;font-size:13px;margin:4px 0 2px 0;">'
-                        f'📅 {post.get("dag","")} — {post.get("publicatiedatum","")}</p>'
-                        f'<div style="background:#f8f8f8;border-left:3px solid {color};'
-                        f'padding:8px 12px;border-radius:0 8px 8px 0;font-size:13px;white-space:pre-wrap;">'
-                        f'{post.get("caption","")}</div>'
-                        f'<p style="font-size:11px;color:{color};margin:3px 0 4px 0;">'
-                        f'{post.get("hashtags","")}</p>',
-                        unsafe_allow_html=True,
-                    )
-                    current_title = cur_titles.get(row_idx) or post.get("beeldtitel", "")
-                    new_title = st.text_input(
-                        "Beeldtitel",
-                        value=current_title,
-                        key=f"title_{row_idx}",
-                        placeholder="Max 6 woorden voor de afbeelding...",
-                        label_visibility="collapsed",
-                    )
-                    word_count = len(new_title.split()) if new_title.strip() else 0
-                    if word_count > 6:
-                        st.caption(f"⚠️ {word_count}/6 woorden — wordt ingekort bij opslaan")
-                    elif new_title.strip():
-                        st.caption(f"🖼️ {word_count}/6 woorden")
-                    if new_title != current_title:
-                        cur_titles[row_idx]    = new_title
-                        pending_titles[row_idx] = " ".join(new_title.split()[:6])
-
-                with col_ctrl:
-                    # Gekleurde status-badge
-                    badge = {
-                        "goedgekeurd": ("#22c55e", "✅ Goedgekeurd"),
-                        "afgewezen":   ("#ef4444", "❌ Afgewezen"),
-                        "concept":     ("#f59e0b", "⏳ Concept"),
-                    }.get(cur_status, ("#999", cur_status))
-                    st.markdown(
-                        f'<div style="background:{badge[0]};color:#fff;font-weight:700;'
-                        f'text-align:center;border-radius:8px;padding:5px 8px;'
-                        f'font-size:12px;margin-bottom:8px;">{badge[1]}</div>',
-                        unsafe_allow_html=True,
-                    )
-                    col_ok, col_rej_btn = st.columns(2)
-                    with col_ok:
-                        if st.button("✅", key=f"ok_{row_idx}", use_container_width=True,
-                                     disabled=cur_status == "goedgekeurd"):
-                            cur_updates[row_idx] = ("goedgekeurd", "")
-                            pending[row_idx]     = ("goedgekeurd", "")
-                    with col_rej_btn:
-                        if st.button("❌", key=f"rej_{row_idx}", use_container_width=True,
-                                     disabled=cur_status == "afgewezen"):
-                            cur_updates[row_idx] = ("afgewezen", _note_val(row_idx, post))
-                            pending[row_idx]     = ("afgewezen", _note_val(row_idx, post))
-
-                    if cur_status == "afgewezen":
-                        typed = st.text_input(
-                            "Reden",
-                            value=_note_val(row_idx, post),
-                            key=f"note_{row_idx}",
-                            placeholder="Wat moet er anders?",
-                            label_visibility="collapsed",
-                        )
-                        cur_updates[row_idx] = ("afgewezen", typed)
-                        pending[row_idx]     = ("afgewezen", typed)
-
-                st.markdown(
-                    "<hr style='margin:4px 0 10px 0;border:none;border-top:1px solid #eee;'>",
-                    unsafe_allow_html=True,
-                )
+                _render_post_card(selected_tab, row_idx, post, color)
 
         # ── Actieknoppen onderaan de review ───────────────────────────────────
         client_row_indices = {ri for ri, _ in rows}
