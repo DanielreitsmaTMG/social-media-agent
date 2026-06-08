@@ -952,7 +952,7 @@ def render_approval_interface(posts, client_dict, spreadsheet_id, selected_tab, 
 
         with col_dl:
             client_posts = [p for _, p in rows]
-            approved_posts = [p for p in client_posts if p.get("status") == "goedgekeurd"]
+            approved_posts = [p for ri, p in rows if _eff(ri, p) == "goedgekeurd"]
             if not approved_posts:
                 st.button("📄 Download", key=f"dl_{selected_client}", disabled=True, use_container_width=True)
             else:
@@ -968,7 +968,7 @@ def render_approval_interface(posts, client_dict, spreadsheet_id, selected_tab, 
                 )
 
         with col_mail:
-            from urllib.parse import quote
+            from urllib.parse import quote  # noqa
             week_label_mail = selected_tab.replace("Posts_", "").replace("_W", " week ")
             subject = quote(f"{selected_client} | Je kunt aan de slag met de afbeeldingen")
             body = quote(
