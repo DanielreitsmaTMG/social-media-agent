@@ -861,7 +861,7 @@ def render_approval_interface(posts, client_dict, spreadsheet_id, selected_tab, 
         client_row_indices = {ri for ri, _ in rows}
         client_pending = {ri: v for ri, v in pending.items() if ri in client_row_indices}
 
-        col_save, col_regen, col_dl = st.columns(3)
+        col_save, col_regen, col_dl, col_mail = st.columns(4)
 
         with col_save:
             if st.button(
@@ -927,6 +927,19 @@ def render_approval_interface(posts, client_dict, spreadsheet_id, selected_tab, 
                     key=f"dl_btn_{selected_client}",
                     use_container_width=True,
                 )
+
+        with col_mail:
+            from urllib.parse import quote
+            week_label_mail = selected_tab.replace("Posts_", "").replace("_W", " week ")
+            subject = quote(f"{selected_client} | Je kunt aan de slag met de afbeeldingen")
+            body = quote(
+                f"Hey,\n\n"
+                f"We hebben de teksten voor {selected_client} voor {week_label_mail} goedgekeurd. "
+                f"Kun je aan de slag met de afbeeldingen voor deze klant?\n\n"
+                f"Alvast bedankt!"
+            )
+            mailto = f"mailto:studio@topmediagroep.nl?subject={subject}&body={body}"
+            st.link_button("📧 Mail studio", mailto, use_container_width=True)
 
 
 with tab_goedkeuring:
