@@ -262,301 +262,289 @@ def _total_posts_pw(client: dict) -> int:
 # als een afgewerkt product i.p.v. een intern script.
 
 BRAND = {
-    "primary":      "#4F46E5",   # indigo — hoofdkleur van het merk
+    "primary":      "#4F46E5",   # indigo — merkkleur
     "primary_dark": "#3730A3",
-    "primary_soft": "#EEF2FF",
-    "accent":       "#F97316",   # warm oranje accent
-    "success":      "#16A34A",
-    "warning":      "#F59E0B",
-    "danger":       "#DC2626",
-    "ink":          "#111827",   # primaire tekstkleur
-    "ink_soft":     "#6B7280",   # secundaire tekstkleur
-    "line":         "#E5E7EB",   # randen
-    "surface":      "#FFFFFF",   # kaarten
-    "canvas":       "#F7F8FB",   # paginabackground
+    "primary_soft": "#F0F0FF",
+    "success":      "#34C759",   # Apple groen
+    "warning":      "#FF9F0A",   # Apple oranje
+    "danger":       "#FF3B30",   # Apple rood
+    "ink":          "#1D1D1F",   # Apple near-black
+    "ink_soft":     "#86868B",   # Apple secondary
+    "ink_xsoft":    "#C7C7CC",   # Apple tertiary
+    "line":         "rgba(0,0,0,.08)",
+    "surface":      "#FFFFFF",
+    "canvas":       "#F5F5F7",   # Apple signature gray
 }
 
 st.markdown(f"""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;0,14..32,800;0,14..32,900&display=swap');
 
 :root {{
-    --brand-primary: {BRAND['primary']};
-    --brand-primary-dark: {BRAND['primary_dark']};
-    --brand-primary-soft: {BRAND['primary_soft']};
-    --brand-accent: {BRAND['accent']};
-    --brand-success: {BRAND['success']};
-    --brand-warning: {BRAND['warning']};
-    --brand-danger: {BRAND['danger']};
-    --brand-ink: {BRAND['ink']};
-    --brand-ink-soft: {BRAND['ink_soft']};
-    --brand-line: {BRAND['line']};
-    --brand-surface: {BRAND['surface']};
-    --brand-canvas: {BRAND['canvas']};
+    --p:     {BRAND['primary']};
+    --pd:    {BRAND['primary_dark']};
+    --ps:    {BRAND['primary_soft']};
+    --ok:    {BRAND['success']};
+    --warn:  {BRAND['warning']};
+    --err:   {BRAND['danger']};
+    --ink:   {BRAND['ink']};
+    --ink2:  {BRAND['ink_soft']};
+    --ink3:  {BRAND['ink_xsoft']};
+    --line:  {BRAND['line']};
+    --surf:  {BRAND['surface']};
+    --bg:    {BRAND['canvas']};
+    --r-card: 20px;
+    --r-btn:  980px;
+    --r-inp:  12px;
+    --shadow: 0 2px 12px rgba(0,0,0,.07), 0 0 0 0.5px rgba(0,0,0,.04);
+    --shadow-hover: 0 8px 32px rgba(0,0,0,.12), 0 0 0 0.5px rgba(0,0,0,.05);
 }}
 
-/* ── Basistypografie ───────────────────────────────────────────────────── */
-/* Let op: NIET op alle span/div toepassen — Streamlit gebruikt voor pijltjes en
-   icoontjes (bv. de pijl van een expander) een icoon-lettertype dat tekst zoals
-   "keyboard_arrow_right" omzet naar een glyph. Een te brede font-override breekt
-   dat en toont de letterlijke tekst, wat overlap met labels veroorzaakt. */
+/* ── Font ── */
 html, body, .stApp,
-.stMarkdown, .stMarkdown p, .stMarkdown li, .stMarkdown span:not([class*="material"]),
+.stMarkdown, .stMarkdown p, .stMarkdown li,
+.stMarkdown span:not([class*="material"]),
 .stCaption, .stText, p, label,
 .stButton button, .stDownloadButton button, .stLinkButton a,
 input, textarea, select,
 [data-testid="stMetricLabel"], [data-testid="stMetricValue"],
 [data-testid="stWidgetLabel"] {{
-    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif !important;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+    -webkit-font-smoothing: antialiased;
 }}
-/* Icoon-lettertypes van Streamlit met rust laten */
-[data-testid*="Icon"], [class*="material-symbols"], [class*="MaterialSymbols"],
-.stApp [class*="icon"] {{
+[data-testid*="Icon"], [class*="material-symbols"],
+[class*="MaterialSymbols"], .stApp [class*="icon"] {{
     font-family: 'Material Symbols Rounded', 'Material Icons' !important;
 }}
-.stApp {{
-    background: var(--brand-canvas);
-}}
-h1, h2, h3, h4 {{
-    font-family: 'Plus Jakarta Sans', sans-serif !important;
-    font-weight: 800 !important;
-    color: var(--brand-ink) !important;
-    letter-spacing: -0.02em;
-}}
-p, .stMarkdown, .stCaption, label {{
-    color: var(--brand-ink);
-}}
 
-/* ── Streamlit-chrome verbergen voor een productgevoel ─────────────────── */
-#MainMenu {{ visibility: hidden; height: 0; overflow: hidden; }}
-footer {{ visibility: hidden; height: 0; overflow: hidden; }}
-header[data-testid="stHeader"] {{ visibility: hidden; height: 0; overflow: hidden; }}
-[data-testid="stToolbar"] {{ display: none !important; }}
-[data-testid="manage-app-button"] {{ display: none !important; }}
+/* ── Canvas ── */
+.stApp {{ background: var(--bg) !important; }}
+.block-container {{ padding: 2rem 2.5rem 5rem !important; max-width: 1240px !important; }}
+
+/* ── Streamlit chrome verbergen ── */
+#MainMenu, footer, header[data-testid="stHeader"] {{
+    visibility: hidden; height: 0; overflow: hidden;
+}}
+[data-testid="stToolbar"], [data-testid="manage-app-button"],
 .stDeployButton {{ display: none !important; }}
-.block-container {{ padding-top: 1.6rem; max-width: 1280px; }}
 
-/* ── Merk-header (Top Socials wordmark) ──────────────────────────────────────── */
-.topsoc-header {{
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 6px;
-}}
-.topsoc-brand {{
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}}
-.topsoc-logo {{
-    width: 42px;
-    height: 42px;
-    border-radius: 12px;
-    background: linear-gradient(135deg, var(--brand-primary), var(--brand-accent));
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 20px;
-    box-shadow: 0 6px 16px rgba(79,70,229,.28);
-}}
-.topsoc-titles {{ line-height: 1.15; }}
-.topsoc-name {{
-    font-size: 22px;
-    font-weight: 800;
-    color: var(--brand-ink);
-    letter-spacing: -0.02em;
-}}
-.topsoc-sub {{
-    font-size: 13px;
-    color: var(--brand-ink-soft);
-    font-weight: 500;
-}}
-.topsoc-pill {{
-    background: var(--brand-primary-soft);
-    color: var(--brand-primary-dark);
-    font-size: 12px;
-    font-weight: 700;
-    padding: 6px 14px;
-    border-radius: 99px;
-    letter-spacing: .02em;
+/* ── Koppen ── */
+h1, h2, h3, h4 {{
+    font-family: 'Inter', sans-serif !important;
+    font-weight: 700 !important;
+    color: var(--ink) !important;
+    letter-spacing: -0.03em !important;
 }}
 
-/* ── KPI / metric-kaarten ──────────────────────────────────────────────── */
+/* ── Divider ── */
+hr {{ border-color: var(--line) !important; margin: 1.5rem 0 !important; }}
+
+/* ── KPI-kaarten ── */
 [data-testid="stMetric"] {{
-    background: var(--brand-surface);
-    border: 1px solid var(--brand-line);
-    border-radius: 16px;
-    padding: 16px 20px;
-    box-shadow: 0 1px 2px rgba(16,24,40,.04);
-    /* Vaste minimumhoogte zodat KPI-kaarten gelijk ogen, ook als één ervan
-       een extra delta-regel heeft (zoals "over 2d 6u" bij Volgende run) */
+    background: var(--surf);
+    border: none;
+    border-radius: var(--r-card);
+    padding: 20px 24px;
+    box-shadow: var(--shadow);
     min-height: 96px;
     box-sizing: border-box;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
+    display: flex; flex-direction: column; justify-content: center;
 }}
 [data-testid="stMetricLabel"] {{
-    font-size: 12px !important;
-    font-weight: 700 !important;
-    color: var(--brand-ink-soft) !important;
-    text-transform: uppercase;
-    letter-spacing: .06em;
+    font-size: 11px !important; font-weight: 600 !important;
+    color: var(--ink2) !important; text-transform: uppercase; letter-spacing: .08em;
 }}
 [data-testid="stMetricValue"] {{
-    font-size: 22px !important;
-    font-weight: 800 !important;
-    color: var(--brand-ink) !important;
+    font-size: 26px !important; font-weight: 700 !important;
+    color: var(--ink) !important; letter-spacing: -0.02em;
+}}
+[data-testid="stMetricDelta"] svg {{ display: none; }}
+[data-testid="stMetricDelta"] > div {{
+    font-size: 12px !important; color: var(--ink2) !important;
+    font-weight: 500 !important;
 }}
 
-/* ── Ingebedde HTML-knoppen (bv. "Mail studio") ────────────────────────── */
-/* components.html() rendert in een eigen iframe; zonder reset staat die
-   net even anders uitgelijnd dan een natieve st.button ernaast. */
-iframe[title="components.html"], iframe[data-testid="stIFrame"] {{
-    display: block;
-    border: none !important;
-    margin: 0 !important;
-    vertical-align: top;
-}}
-
-/* ── Tabs ──────────────────────────────────────────────────────────────── */
+/* ── Tabs: gesegmenteerde pill-stijl ── */
 .stTabs [data-baseweb="tab-list"] {{
-    gap: 6px;
-    border-bottom: 1px solid var(--brand-line);
+    background: rgba(0,0,0,.05);
+    border-radius: 14px;
+    padding: 4px;
+    gap: 2px;
+    border: none !important;
 }}
 .stTabs [data-baseweb="tab"] {{
-    height: 42px;
-    border-radius: 10px 10px 0 0;
-    padding: 0 18px;
-    font-weight: 700;
-    font-size: 14px;
-    color: var(--brand-ink-soft);
+    border-radius: 11px;
+    padding: 7px 18px;
+    font-weight: 600; font-size: 13px;
+    color: var(--ink2);
     background: transparent;
+    border: none !important;
+    transition: all .18s ease;
 }}
 .stTabs [aria-selected="true"] {{
-    color: var(--brand-primary) !important;
-    background: var(--brand-primary-soft) !important;
-    border-bottom: 3px solid var(--brand-primary) !important;
+    background: var(--surf) !important;
+    color: var(--ink) !important;
+    box-shadow: 0 1px 6px rgba(0,0,0,.14) !important;
+    border: none !important;
 }}
+.stTabs [data-baseweb="tab-highlight"] {{ display: none; }}
+.stTabs [data-baseweb="tab-border"]    {{ display: none; }}
 
-/* ── Knoppen ───────────────────────────────────────────────────────────── */
-.stButton > button, .stDownloadButton > button, .stLinkButton > a {{
-    border-radius: 10px !important;
-    font-weight: 700 !important;
-    border: 1px solid var(--brand-line) !important;
-    transition: all .12s ease;
+/* ── Knoppen ── */
+.stButton > button, .stDownloadButton > button {{
+    border-radius: var(--r-btn) !important;
+    font-weight: 600 !important; font-size: 13px !important;
+    border: 1px solid var(--line) !important;
+    background: var(--surf) !important;
+    color: var(--ink) !important;
+    transition: all .18s cubic-bezier(.4,0,.2,1);
+    letter-spacing: -.01em;
 }}
-.stButton > button[kind="primary"], .stDownloadButton > button[kind="primary"] {{
-    background: var(--brand-primary) !important;
-    border-color: var(--brand-primary) !important;
-    box-shadow: 0 4px 12px rgba(79,70,229,.25);
+.stButton > button[kind="primary"] {{
+    background: var(--p) !important;
+    border-color: var(--p) !important;
+    color: #fff !important;
+    box-shadow: 0 2px 10px rgba(79,70,229,.35) !important;
 }}
-.stButton > button:hover, .stDownloadButton > button:hover {{
-    border-color: var(--brand-primary) !important;
-    color: var(--brand-primary) !important;
-}}
-
-/* ── Inputs ────────────────────────────────────────────────────────────── */
-.stTextInput input, .stSelectbox div[data-baseweb="select"] > div, .stTextArea textarea {{
-    border-radius: 10px !important;
-    border-color: var(--brand-line) !important;
-}}
-.stTextInput input:focus, .stTextArea textarea:focus {{
-    border-color: var(--brand-primary) !important;
-    box-shadow: 0 0 0 1px var(--brand-primary) !important;
-}}
-
-/* ── Expanders ─────────────────────────────────────────────────────────── */
-[data-testid="stExpander"] {{
-    border: 1px solid var(--brand-line) !important;
-    border-radius: 14px !important;
-    background: var(--brand-surface);
-    box-shadow: 0 1px 2px rgba(16,24,40,.04);
-}}
-
-/* ── Card-stijl voor elke klant ────────────────────────────────────────── */
-.client-card {{
-    display: flex;
-    align-items: stretch;
-    border: 1px solid var(--brand-line);
-    border-radius: 16px;
-    margin-bottom: 10px;
-    overflow: hidden;
-    background: var(--brand-surface);
-    box-shadow: 0 1px 3px rgba(16,24,40,.05);
-    transition: box-shadow .15s, transform .15s;
-}}
-.client-card:hover {{
-    box-shadow: 0 8px 24px rgba(16,24,40,.08);
+.stButton > button:hover:not(:disabled) {{
+    box-shadow: var(--shadow) !important;
     transform: translateY(-1px);
 }}
-
-/* Logo-blok links */
-.client-logo-block {{
-    width: 68px;
-    min-width: 68px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--brand-primary-soft);
-    border-right: 1px solid var(--brand-line);
-    padding: 12px 8px;
-}}
-.client-logo-block img {{
-    width: 44px;
-    height: 44px;
-    border-radius: 10px;
-    object-fit: cover;
-}}
-.client-logo-placeholder {{
-    width: 44px;
-    height: 44px;
-    border-radius: 10px;
-    background: linear-gradient(135deg, var(--brand-primary), var(--brand-accent));
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 20px;
+.stButton > button[kind="primary"]:hover:not(:disabled) {{
+    background: var(--pd) !important;
+    border-color: var(--pd) !important;
 }}
 
-/* Koptekst rechts van het logo */
-.client-header-content {{
-    flex: 1;
-    padding: 14px 18px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 4px;
+/* ── Inputs ── */
+.stTextInput input, .stTextArea textarea,
+.stSelectbox div[data-baseweb="select"] > div {{
+    border-radius: var(--r-inp) !important;
+    border: 1px solid var(--line) !important;
+    background: var(--surf) !important;
+    font-size: 14px !important;
+    color: var(--ink) !important;
 }}
-.client-name {{
-    font-size: 15px;
-    font-weight: 800;
-    color: var(--brand-ink);
-    line-height: 1.2;
-    letter-spacing: -0.01em;
-}}
-.client-meta {{
-    font-size: 13px;
-    color: var(--brand-ink-soft);
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
-}}
-.client-meta img {{
-    vertical-align: middle;
-    margin-right: 3px;
+.stTextInput input:focus, .stTextArea textarea:focus {{
+    border-color: var(--p) !important;
+    box-shadow: 0 0 0 3px rgba(79,70,229,.12) !important;
 }}
 
-/* Verberg de Streamlit expander-knop stijl binnen kaarten */
-.card-expander [data-testid="stExpander"] {{
+/* ── Expanders ── */
+[data-testid="stExpander"] {{
+    background: var(--surf) !important;
     border: none !important;
-    box-shadow: none !important;
-    border-radius: 0 !important;
+    border-radius: 16px !important;
+    box-shadow: var(--shadow) !important;
+    overflow: hidden;
 }}
-.card-expander [data-testid="stExpander"] summary {{
-    padding: 14px 16px !important;
-    border-bottom: 1px solid #f0f0f0;
+[data-testid="stExpander"] summary {{
+    font-weight: 600 !important; font-size: 13px !important;
+    color: var(--ink2) !important;
+    padding: 12px 16px !important;
+}}
+
+/* ── Sidebar ── */
+[data-testid="stSidebar"] {{
+    background: var(--surf) !important;
+    border-right: 1px solid var(--line) !important;
+}}
+[data-testid="stSidebar"] .block-container {{
+    padding: 1.5rem 1.2rem !important;
+}}
+
+/* ── Merk-header ── */
+.ts-header {{
+    display: flex; align-items: center;
+    justify-content: space-between;
+    padding: 4px 0 20px;
+}}
+.ts-logo {{
+    width: 38px; height: 38px; border-radius: 11px;
+    background: var(--p);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 19px;
+    box-shadow: 0 4px 14px rgba(79,70,229,.3);
+    flex-shrink: 0;
+}}
+.ts-name {{
+    font-size: 20px; font-weight: 800;
+    color: var(--ink); letter-spacing: -0.03em;
+    line-height: 1;
+}}
+.ts-sub {{
+    font-size: 12px; font-weight: 400;
+    color: var(--ink2); margin-top: 2px; letter-spacing: .01em;
+}}
+.ts-live {{
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(52,199,89,.12); color: #1a7f37;
+    font-size: 11px; font-weight: 600; letter-spacing: .04em;
+    padding: 5px 12px; border-radius: 99px;
+}}
+.ts-live-dot {{
+    width: 6px; height: 6px; border-radius: 99px;
+    background: var(--ok);
+    box-shadow: 0 0 0 3px rgba(52,199,89,.25);
+    animation: pulse 2s ease infinite;
+}}
+@keyframes pulse {{
+    0%, 100% {{ opacity:1; }} 50% {{ opacity:.4; }}
+}}
+
+/* ── Klant-tegels ── */
+.ts-tile {{
+    background: var(--surf);
+    border-radius: var(--r-card);
+    padding: 18px 16px 14px;
+    box-shadow: var(--shadow);
+    transition: box-shadow .2s ease, transform .2s ease;
+    cursor: default;
+    height: 148px;
+    box-sizing: border-box;
+    display: flex; flex-direction: column; justify-content: space-between;
+}}
+.ts-tile:hover {{
+    box-shadow: var(--shadow-hover);
+    transform: translateY(-2px);
+}}
+.ts-tile-top {{
+    display: flex; align-items: flex-start; gap: 10px;
+}}
+.ts-tile-fav {{
+    width: 34px; height: 34px; border-radius: 9px;
+    background: var(--ps); flex-shrink: 0;
+    object-fit: contain;
+    border: 0.5px solid rgba(0,0,0,.06);
+}}
+.ts-tile-name {{
+    font-size: 13px; font-weight: 700;
+    color: var(--ink); letter-spacing: -0.02em;
+    line-height: 1.3;
+    display: -webkit-box; -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical; overflow: hidden;
+}}
+.ts-tile-badges {{
+    display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px;
+}}
+.ts-tile-foot {{
+    font-size: 11px; font-weight: 500;
+    color: var(--ink3); letter-spacing: .01em;
+}}
+
+/* ── iframe (Mail studio btn) ── */
+iframe[title="components.html"], iframe[data-testid="stIFrame"] {{
+    display: block; border: none !important;
+    margin: 0 !important; vertical-align: top;
+}}
+
+/* ── Progress bar ── */
+.ts-progress {{
+    height: 4px; border-radius: 99px;
+    background: rgba(0,0,0,.07); overflow: hidden; margin: 6px 0 14px;
+}}
+.ts-progress-fill {{
+    height: 4px; border-radius: 99px;
+    background: var(--ok); transition: width .4s ease;
 }}
 </style>
 """, unsafe_allow_html=True)
@@ -585,14 +573,19 @@ else:
     # ── Login-check ───────────────────────────────────────────────────────────
     if not st.session_state.get("_ts_logged_in"):
         st.markdown(
-            '<div style="max-width:400px;margin:80px auto 0;">'
-            '<div style="text-align:center;margin-bottom:32px;">'
-            '<div style="font-size:40px;margin-bottom:6px;">✨</div>'
-            '<div style="font-size:26px;font-weight:800;color:#4F46E5;letter-spacing:-.5px;">Top Socials</div>'
-            '<div style="font-size:14px;color:#6B7280;margin-top:6px;">Inloggen bij TopMediaGroep</div>'
+            '<div style="max-width:380px;margin:100px auto 0;">'
+            '<div style="text-align:center;margin-bottom:36px;">'
+            '<div style="display:inline-flex;align-items:center;justify-content:center;'
+            'width:52px;height:52px;border-radius:15px;background:#4F46E5;font-size:24px;'
+            'box-shadow:0 6px 20px rgba(79,70,229,.35);margin-bottom:16px;">✨</div>'
+            '<div style="font-size:28px;font-weight:800;color:#1D1D1F;letter-spacing:-.04em;'
+            'font-family:Inter,-apple-system,sans-serif;">Top Socials</div>'
+            '<div style="font-size:14px;color:#86868B;margin-top:6px;font-weight:400;">'
+            'TopMediaGroep · Content platform</div>'
             '</div>'
-            '<div style="background:#fff;border:1px solid #E5E7EB;border-radius:16px;'
-            'padding:28px 28px 24px;box-shadow:0 4px 24px rgba(0,0,0,.07);">',
+            '<div style="background:#fff;border-radius:22px;'
+            'padding:32px 28px 28px;box-shadow:0 4px 30px rgba(0,0,0,.09),'
+            '0 0 0 0.5px rgba(0,0,0,.04);">',
             unsafe_allow_html=True,
         )
 
@@ -626,10 +619,12 @@ else:
 # ── Sidebar: gebruikersprofiel + uitlogknop ───────────────────────────────────
 with st.sidebar:
     st.markdown(
-        f'<div style="padding:12px 0 4px;">'
-        f'<div style="font-weight:700;font-size:15px;">{_logged_in_name}</div>'
-        f'<div style="font-size:12px;color:#6B7280;margin-top:2px;">'
-        f'{"👑 Admin" if _logged_in_role == "admin" else "👤 Medewerker"}'
+        f'<div style="padding:8px 0 16px;">'
+        f'<div style="font-size:14px;font-weight:700;color:#1D1D1F;letter-spacing:-.01em;">'
+        f'{_logged_in_name}</div>'
+        f'<div style="font-size:11px;font-weight:500;color:#86868B;margin-top:3px;'
+        f'text-transform:uppercase;letter-spacing:.06em;">'
+        f'{"Admin" if _logged_in_role == "admin" else "Medewerker"}'
         f'</div></div>',
         unsafe_allow_html=True,
     )
@@ -640,25 +635,19 @@ with st.sidebar:
             st.rerun()
 
 # ── Merk-header ───────────────────────────────────────────────────────────────
-
 st.markdown(
-    """
-    <div class="topsoc-header">
-        <div class="topsoc-brand">
-            <div class="topsoc-logo">✨</div>
-            <div class="topsoc-titles">
-                <div class="topsoc-name">Top Socials</div>
-                <div class="topsoc-sub">Content &amp; goedkeuring voor al je social-mediaklanten</div>
-            </div>
-        </div>
-        <div class="topsoc-pill">Live overzicht</div>
-    </div>
-    """,
+    '<div class="ts-header">'
+    '  <div style="display:flex;align-items:center;gap:12px;">'
+    '    <div class="ts-logo">✨</div>'
+    '    <div>'
+    '      <div class="ts-name">Top Socials</div>'
+    '      <div class="ts-sub">Content &amp; goedkeuring voor TopMediaGroep</div>'
+    '    </div>'
+    '  </div>'
+    '  <div class="ts-live"><div class="ts-live-dot"></div>LIVE</div>'
+    '</div>',
     unsafe_allow_html=True,
 )
-st.caption("Volg, beoordeel en verstuur social media content voor al je klanten — op één plek.")
-
-st.divider()
 
 # Volgende run
 col1, col2, col3 = st.columns(3)
@@ -736,44 +725,30 @@ with tab_klanten:
                     if count:
                         c = PLATFORM_COLORS[platform]
                         badge_parts.append(
-                            f'<span style="display:inline-flex;align-items:center;'
-                            f'background:{c}18;color:{c};border-radius:5px;'
-                            f'padding:2px 6px;font-size:11px;font-weight:700;">'
+                            f'<span style="display:inline-flex;align-items:center;gap:3px;'
+                            f'background:{c}15;color:{c};border-radius:6px;'
+                            f'padding:3px 7px;font-size:11px;font-weight:600;letter-spacing:.01em;">'
                             f'{PLATFORM_ICON_HTML[platform]}{label}</span>'
                         )
                 badges_html = " ".join(badge_parts)
 
                 favicon = (
-                    f'<img src="{img_url}" style="width:36px;height:36px;'
-                    f'border-radius:8px;object-fit:contain;background:#f3f4f6;'
-                    f'border:1px solid #e5e7eb;" onerror="this.style.display=\'none\'">'
+                    f'<img src="{img_url}" class="ts-tile-fav" '
+                    f'onerror="this.style.display=\'none\'">'
                     if img_url else
-                    '<div style="width:36px;height:36px;border-radius:8px;'
-                    'background:#EEF2FF;display:flex;align-items:center;'
-                    'justify-content:center;font-size:18px;">🏢</div>'
+                    '<div class="ts-tile-fav" style="display:flex;align-items:center;'
+                    'justify-content:center;font-size:16px;">🏢</div>'
                 )
 
                 with col:
                     st.markdown(f"""
-                    <div style="background:#fff;border:1px solid #E5E7EB;border-radius:14px;
-                         padding:16px;height:140px;box-sizing:border-box;
-                         box-shadow:0 1px 4px rgba(0,0,0,.04);
-                         display:flex;flex-direction:column;justify-content:space-between;
-                         transition:box-shadow .15s;">
-                      <div style="display:flex;align-items:center;gap:10px;">
+                    <div class="ts-tile">
+                      <div class="ts-tile-top">
                         {favicon}
-                        <div style="font-weight:700;font-size:13px;line-height:1.3;
-                             color:#111827;overflow:hidden;display:-webkit-box;
-                             -webkit-line-clamp:2;-webkit-box-orient:vertical;">
-                          {client['bedrijfsnaam']}
-                        </div>
+                        <div class="ts-tile-name">{client['bedrijfsnaam']}</div>
                       </div>
-                      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;">
-                        {badges_html}
-                      </div>
-                      <div style="font-size:11px;color:#9CA3AF;margin-top:6px;">
-                        {total} posts/week
-                      </div>
+                      <div class="ts-tile-badges">{badges_html}</div>
+                      <div class="ts-tile-foot">{total} posts / week</div>
                     </div>
                     """, unsafe_allow_html=True)
 
