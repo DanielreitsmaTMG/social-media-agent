@@ -25,7 +25,7 @@ from zoneinfo import ZoneInfo
 import gspread
 import streamlit as st
 import streamlit.components.v1 as components
-import streamlit_authenticator as stauth
+import bcrypt
 from google.oauth2.service_account import Credentials as WriteCredentials
 from google.oauth2.service_account import Credentials
 from dotenv import load_dotenv
@@ -90,33 +90,25 @@ WRITE_SCOPES = [
 
 # ── Auth helpers (vroeg definiëren — worden vóór CSS/content aangeroepen) ────
 
-def _build_auth_config():
-    """Bouwt streamlit-authenticator config vanuit st.secrets['auth'].
-    Geeft (credentials_dict, (cookie_name, cookie_key, expiry)) terug,
-    of (None, None) als er geen auth-sectie in secrets staat (lokale dev)."""
+def _auth_users() -> dict:
+    """Geeft alle gebruikers uit st.secrets['auth']['users'] terug, of {} bij lokale dev."""
     try:
-        auth_sec = st.secrets.get("auth", {})
-        if not auth_sec or not auth_sec.get("users"):
-            return None, None
-        credentials = {"usernames": {}}
-        for uname, udata in auth_sec["users"].items():
-            credentials["usernames"][uname] = {
-                "name":     udata.get("name", uname),
-                "email":    udata.get("email", ""),
-                "password": udata.get("password", ""),
-            }
-        cookie_name = auth_sec.get("cookie_name",        "topsocials_auth")
-        cookie_key  = auth_sec.get("cookie_key",         "changeme_32chars")
-        expiry      = int(auth_sec.get("cookie_expiry_days", 7))
-        return credentials, (cookie_name, cookie_key, expiry)
+        return dict(st.secrets.get("auth", {}).get("users", {}))
     except Exception:
-        return None, None
+        return {}
+
+
+def _verify_password(plain: str, hashed: str) -> bool:
+    try:
+        return bcrypt.checkpw(plain.encode(), hashed.encode())
+    except Exception:
+        return False
 
 
 def _current_user_role(username: str) -> str:
     """Geeft de rol van de ingelogde gebruiker: 'admin' of 'reviewer'."""
     try:
-        return st.secrets["auth"]["users"][username].get("role", "reviewer")
+        return _auth_users()[username].get("role", "reviewer")
     except Exception:
         return "reviewer"
 
@@ -581,45 +573,55 @@ st.markdown(
 )
 
 # ── Authenticatie ────────────────────────────────────────────────────────────
-_auth_creds, _auth_cookie = _build_auth_config()
+_users = _auth_users()
+_auth_active = bool(_users)
 
-if _auth_creds is None:
-    # Geen auth in secrets → lokale dev, doorgaan als admin
-    _auth_active       = False
-    _authenticator     = None
-    _logged_in_user    = "dev"
-    _logged_in_name    = "Developer (lokaal)"
-    _logged_in_role    = "admin"
+if not _auth_active:
+    # Geen secrets → lokale dev, doorgaan als admin
+    _logged_in_user = "dev"
+    _logged_in_name = "Developer (lokaal)"
+    _logged_in_role = "admin"
 else:
-    _auth_active   = True
-    _authenticator = stauth.Authenticate(
-        _auth_creds,
-        _auth_cookie[0],
-        _auth_cookie[1],
-        _auth_cookie[2],
-    )
-
-    if not st.session_state.get("authentication_status"):
-        # ── Login-pagina ──────────────────────────────────────────────────────
+    # ── Login-check ───────────────────────────────────────────────────────────
+    if not st.session_state.get("_ts_logged_in"):
         st.markdown(
-            '<div style="max-width:420px;margin:60px auto 0;padding:0 8px;">'
-            '<div style="text-align:center;margin-bottom:28px;">'
-            '<div style="font-size:36px;margin-bottom:4px;">✨</div>'
-            '<div style="font-size:24px;font-weight:800;color:#4F46E5;">Top Socials</div>'
-            '<div style="font-size:14px;color:#6B7280;margin-top:4px;">Inloggen bij TopMediaGroep</div>'
-            '</div>',
+            '<div style="max-width:400px;margin:80px auto 0;">'
+            '<div style="text-align:center;margin-bottom:32px;">'
+            '<div style="font-size:40px;margin-bottom:6px;">✨</div>'
+            '<div style="font-size:26px;font-weight:800;color:#4F46E5;letter-spacing:-.5px;">Top Socials</div>'
+            '<div style="font-size:14px;color:#6B7280;margin-top:6px;">Inloggen bij TopMediaGroep</div>'
+            '</div>'
+            '<div style="background:#fff;border:1px solid #E5E7EB;border-radius:16px;'
+            'padding:28px 28px 24px;box-shadow:0 4px 24px rgba(0,0,0,.07);">',
             unsafe_allow_html=True,
         )
-        _authenticator.login(location="main")
-        st.markdown("</div>", unsafe_allow_html=True)
 
-        if st.session_state.get("authentication_status") is False:
-            st.error("❌ Onjuiste gebruikersnaam of wachtwoord.")
+        with st.form("login_form", clear_on_submit=False):
+            st.markdown('<p style="font-weight:700;font-size:17px;margin:0 0 16px;">Inloggen</p>',
+                        unsafe_allow_html=True)
+            username_input = st.text_input("E-mailadres", placeholder="naam@topmediagroep.nl")
+            password_input = st.text_input("Wachtwoord", type="password")
+            submitted = st.form_submit_button("Inloggen", use_container_width=True, type="primary")
+
+        st.markdown("</div></div>", unsafe_allow_html=True)
+
+        if submitted:
+            user_key = username_input.strip().lower()
+            user_data = _users.get(user_key) or _users.get(username_input.strip())
+            if user_data and _verify_password(password_input, user_data.get("password", "")):
+                st.session_state["_ts_logged_in"]   = True
+                st.session_state["_ts_username"]    = user_key
+                st.session_state["_ts_name"]        = user_data.get("name", user_key)
+                st.session_state["_ts_role"]        = user_data.get("role", "reviewer")
+                st.rerun()
+            else:
+                st.error("❌ Onjuist e-mailadres of wachtwoord.")
+
         st.stop()
 
-    _logged_in_user = st.session_state.get("username", "")
-    _logged_in_name = st.session_state.get("name", _logged_in_user)
-    _logged_in_role = _current_user_role(_logged_in_user)
+    _logged_in_user = st.session_state.get("_ts_username", "")
+    _logged_in_name = st.session_state.get("_ts_name",     _logged_in_user)
+    _logged_in_role = st.session_state.get("_ts_role",     "reviewer")
 
 # ── Sidebar: gebruikersprofiel + uitlogknop ───────────────────────────────────
 with st.sidebar:
@@ -631,9 +633,11 @@ with st.sidebar:
         f'</div></div>',
         unsafe_allow_html=True,
     )
-    if _auth_active and _authenticator:
+    if _auth_active:
         if st.button("Uitloggen", use_container_width=True):
-            _authenticator.logout()
+            for k in ["_ts_logged_in", "_ts_username", "_ts_name", "_ts_role"]:
+                st.session_state.pop(k, None)
+            st.rerun()
 
 # ── Merk-header ───────────────────────────────────────────────────────────────
 
