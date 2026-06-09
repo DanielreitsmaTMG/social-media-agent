@@ -1718,7 +1718,6 @@ if tab_team is not None:
             _all_users = {
                 uname: udata.get("name", uname)
                 for uname, udata in st.secrets.get("auth", {}).get("users", {}).items()
-                if udata.get("role", "reviewer") != "admin"
             }
 
             if not _all_users:
