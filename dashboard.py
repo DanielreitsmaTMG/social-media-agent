@@ -528,11 +528,16 @@ hr {{ border-color: var(--line) !important; margin: 1.5rem 0 !important; }}
 }}
 
 /* ── Login-form: verberg Streamlit's eigen form-wrapper ── */
-[data-testid="stForm"] {{
+[data-testid="stForm"],
+[data-testid="stForm"] > div,
+[data-testid="stForm"] > div > div,
+div[class*="stForm"],
+section[data-testid="stForm"] {{
     background: transparent !important;
     border: none !important;
     padding: 0 !important;
     box-shadow: none !important;
+    margin: 0 !important;
 }}
 
 /* ── iframe (Mail studio btn) ── */
@@ -588,7 +593,7 @@ else:
             unsafe_allow_html=True,
         )
 
-        with st.form("login_form", clear_on_submit=False):
+        with st.form("login_form", clear_on_submit=False, border=False):
             st.markdown('<p style="font-weight:700;font-size:17px;margin:0 0 16px;">Inloggen</p>',
                         unsafe_allow_html=True)
             username_input = st.text_input("E-mailadres", placeholder="naam@topmediagroep.nl")
