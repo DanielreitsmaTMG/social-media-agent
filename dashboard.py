@@ -250,7 +250,12 @@ p, .stMarkdown, .stCaption, label {{
 }}
 
 /* ── Streamlit-chrome verbergen voor een productgevoel ─────────────────── */
-#MainMenu, footer, header[data-testid="stHeader"] {{ visibility: hidden; height: 0; }}
+#MainMenu {{ visibility: hidden; height: 0; overflow: hidden; }}
+footer {{ visibility: hidden; height: 0; overflow: hidden; }}
+header[data-testid="stHeader"] {{ visibility: hidden; height: 0; overflow: hidden; }}
+[data-testid="stToolbar"] {{ display: none !important; }}
+[data-testid="manage-app-button"] {{ display: none !important; }}
+.stDeployButton {{ display: none !important; }}
 .block-container {{ padding-top: 1.6rem; max-width: 1280px; }}
 
 /* ── Merk-header (Top Socials wordmark) ──────────────────────────────────────── */
@@ -477,6 +482,17 @@ iframe[title="components.html"], iframe[data-testid="stIFrame"] {{
 }}
 </style>
 """, unsafe_allow_html=True)
+
+# ── Eigen favicon injecteren (vervangt Streamlit-sterretje in browsertab) ─────
+st.markdown(
+    """<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,"""
+    """<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'>"""
+    """<rect width='64' height='64' rx='14' fill='%234F46E5'/>"""
+    """<text x='32' y='46' font-family='Arial,sans-serif' font-size='28' """
+    """font-weight='800' fill='white' text-anchor='middle'>TS</text>"""
+    """</svg>">""",
+    unsafe_allow_html=True,
+)
 
 # ── Merk-header ───────────────────────────────────────────────────────────────
 
