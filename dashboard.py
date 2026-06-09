@@ -25,6 +25,7 @@ from zoneinfo import ZoneInfo
 import gspread
 import streamlit as st
 import streamlit.components.v1 as components
+import streamlit_authenticator as stauth
 from google.oauth2.service_account import Credentials as WriteCredentials
 from google.oauth2.service_account import Credentials
 from dotenv import load_dotenv
@@ -494,6 +495,61 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# ── Authenticatie ────────────────────────────────────────────────────────────
+_auth_creds, _auth_cookie = _build_auth_config()
+
+if _auth_creds is None:
+    # Geen auth in secrets → lokale dev, doorgaan als admin
+    _auth_active       = False
+    _authenticator     = None
+    _logged_in_user    = "dev"
+    _logged_in_name    = "Developer (lokaal)"
+    _logged_in_role    = "admin"
+else:
+    _auth_active   = True
+    _authenticator = stauth.Authenticate(
+        _auth_creds,
+        _auth_cookie[0],
+        _auth_cookie[1],
+        _auth_cookie[2],
+    )
+
+    if not st.session_state.get("authentication_status"):
+        # ── Login-pagina ──────────────────────────────────────────────────────
+        st.markdown(
+            '<div style="max-width:420px;margin:60px auto 0;padding:0 8px;">'
+            '<div style="text-align:center;margin-bottom:28px;">'
+            '<div style="font-size:36px;margin-bottom:4px;">✨</div>'
+            '<div style="font-size:24px;font-weight:800;color:#4F46E5;">Top Socials</div>'
+            '<div style="font-size:14px;color:#6B7280;margin-top:4px;">Inloggen bij TopMediaGroep</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+        _authenticator.login(location="main")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        if st.session_state.get("authentication_status") is False:
+            st.error("❌ Onjuiste gebruikersnaam of wachtwoord.")
+        st.stop()
+
+    _logged_in_user = st.session_state.get("username", "")
+    _logged_in_name = st.session_state.get("name", _logged_in_user)
+    _logged_in_role = _current_user_role(_logged_in_user)
+
+# ── Sidebar: gebruikersprofiel + uitlogknop ───────────────────────────────────
+with st.sidebar:
+    st.markdown(
+        f'<div style="padding:12px 0 4px;">'
+        f'<div style="font-weight:700;font-size:15px;">{_logged_in_name}</div>'
+        f'<div style="font-size:12px;color:#6B7280;margin-top:2px;">'
+        f'{"👑 Admin" if _logged_in_role == "admin" else "👤 Medewerker"}'
+        f'</div></div>',
+        unsafe_allow_html=True,
+    )
+    if _auth_active and _authenticator:
+        if st.button("Uitloggen", use_container_width=True):
+            _authenticator.logout()
+
 # ── Merk-header ───────────────────────────────────────────────────────────────
 
 st.markdown(
@@ -531,6 +587,17 @@ with col1:
 
 clients = load_clients()
 
+# ── Filter klanten op basis van rol en medewerker-toewijzingen ───────────────
+_all_clients = clients  # bewaar volledig voor admin-tab
+if _logged_in_role != "admin":
+    _sid_for_filter  = os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID") or st.secrets.get("GOOGLE_SHEETS_SPREADSHEET_ID", "")
+    _saj_for_filter  = _sa_info_json()
+    if _sid_for_filter and _saj_for_filter:
+        _assignments     = load_medewerker_assignments(_sid_for_filter, _saj_for_filter)
+        _allowed_names   = _assignments.get(_logged_in_user, [])
+        if _allowed_names != "ALL":
+            clients = [c for c in clients if c.get("bedrijfsnaam", "") in _allowed_names]
+
 with col2:
     st.metric("Actieve klanten", len(clients))
 
@@ -540,7 +607,11 @@ with col3:
 
 st.divider()
 
-tab_klanten, tab_goedkeuring = st.tabs(["📋 Klanten", "✅ Goedkeuring"])
+if _logged_in_role == "admin":
+    tab_klanten, tab_goedkeuring, tab_team = st.tabs(["📋 Klanten", "✅ Goedkeuring", "👥 Team"])
+else:
+    tab_klanten, tab_goedkeuring = st.tabs(["📋 Klanten", "✅ Goedkeuring"])
+    tab_team = None
 
 with tab_klanten:
     st.subheader("Actieve klanten")
@@ -655,6 +726,88 @@ WRITE_SCOPES = [
 STATUS_OPTIONS  = ["concept", "goedgekeurd", "afgewezen"]
 STATUS_COLORS   = {"concept": "#f59e0b", "goedgekeurd": "#22c55e", "afgewezen": "#ef4444"}
 STATUS_LABELS   = {"concept": "⏳ Concept", "goedgekeurd": "✅ Goedgekeurd", "afgewezen": "❌ Afgewezen"}
+
+
+# ── Auth helpers ──────────────────────────────────────────────────────────────
+
+def _build_auth_config():
+    """Bouwt streamlit-authenticator config vanuit st.secrets['auth'].
+    Geeft (credentials_dict, (cookie_name, cookie_key, expiry)) terug,
+    of (None, None) als er geen auth-sectie in secrets staat (lokale dev)."""
+    try:
+        auth_sec = st.secrets.get("auth", {})
+        if not auth_sec or not auth_sec.get("users"):
+            return None, None
+        credentials = {"usernames": {}}
+        for uname, udata in auth_sec["users"].items():
+            credentials["usernames"][uname] = {
+                "name":     udata.get("name", uname),
+                "email":    udata.get("email", ""),
+                "password": udata.get("password", ""),
+            }
+        cookie_name   = auth_sec.get("cookie_name",        "topsocials_auth")
+        cookie_key    = auth_sec.get("cookie_key",         "changeme_32chars")
+        expiry        = int(auth_sec.get("cookie_expiry_days", 7))
+        return credentials, (cookie_name, cookie_key, expiry)
+    except Exception:
+        return None, None
+
+
+def _current_user_role(username: str) -> str:
+    """Geeft de rol van de ingelogde gebruiker: 'admin' of 'reviewer'."""
+    try:
+        return st.secrets["auth"]["users"][username].get("role", "reviewer")
+    except Exception:
+        return "reviewer"
+
+
+@st.cache_data(ttl=30)
+def load_medewerker_assignments(spreadsheet_id: str, sa_info_json: str) -> dict:
+    """Laadt klant-toewijzingen uit de 'Medewerkers'-tab van de Google Sheet.
+    Geeft {username: [bedrijfsnaam, ...]} terug, of {username: 'ALL'} voor admins."""
+    try:
+        sa_info = json.loads(sa_info_json)
+        creds   = Credentials.from_service_account_info(sa_info, scopes=SCOPES)
+        gc      = gspread.authorize(creds)
+        sh      = gc.open_by_key(spreadsheet_id)
+        try:
+            ws = sh.worksheet("Medewerkers")
+        except gspread.WorksheetNotFound:
+            return {}
+        rows   = ws.get_all_records(default_blank="")
+        result = {}
+        for row in rows:
+            uname     = str(row.get("gebruiker", "")).strip().lower()
+            raw       = str(row.get("klanten", "")).strip()
+            if not uname:
+                continue
+            result[uname] = "ALL" if raw.upper() == "ALL" else [
+                k.strip() for k in raw.split(",") if k.strip()
+            ]
+        return result
+    except Exception:
+        return {}
+
+
+def save_medewerker_assignments(spreadsheet_id: str, sa_info_json: str,
+                                assignments: dict) -> None:
+    """Schrijft klant-toewijzingen terug naar de 'Medewerkers'-tab."""
+    sa_info = json.loads(sa_info_json)
+    creds   = WriteCredentials.from_service_account_info(sa_info, scopes=WRITE_SCOPES)
+    gc      = gspread.authorize(creds)
+    sh      = gc.open_by_key(spreadsheet_id)
+    try:
+        ws = sh.worksheet("Medewerkers")
+        ws.clear()
+    except gspread.WorksheetNotFound:
+        ws = sh.add_worksheet("Medewerkers", rows=100, cols=2)
+    rows = [["gebruiker", "klanten"]]
+    for uname, clients in assignments.items():
+        rows.append([uname, "ALL" if clients == "ALL" else ", ".join(clients)])
+    ws.update(rows, value_input_option="RAW")
+    ws.freeze(rows=1)
+    ws.format("A1:B1", {"textFormat": {"bold": True}})
+    load_medewerker_assignments.clear()
 
 
 def _get_write_client(sa_info: dict):
@@ -1538,6 +1691,76 @@ with tab_goedkeuring:
             else:
                 posts = load_posts_from_tab(spreadsheet_id, selected_tab, sa_json)
 
+            # Filter posts op basis van rol
+            if _logged_in_role != "admin":
+                _assignments_g = load_medewerker_assignments(spreadsheet_id, sa_json)
+                _allowed_g     = _assignments_g.get(_logged_in_user, [])
+                if _allowed_g != "ALL":
+                    posts = [p for p in posts if p.get("bedrijfsnaam", "") in _allowed_g]
+
             client_dict = load_client_dict(spreadsheet_id, sa_json)
             render_approval_interface(posts, client_dict, spreadsheet_id, selected_tab, sa_json)
 
+
+# ── Team-beheer (alleen admin) ────────────────────────────────────────────────
+if tab_team is not None:
+    with tab_team:
+        st.subheader("👥 Medewerkers & klant-toewijzingen")
+        st.caption("Wijs per medewerker de klanten toe die zij mogen zien en beoordelen. "
+                   "Wijzigingen gaan direct in op het volgende inlogmoment van de medewerker.")
+
+        _t_sid = os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID") or st.secrets.get("GOOGLE_SHEETS_SPREADSHEET_ID", "")
+        _t_saj = _sa_info_json()
+
+        if not _t_sid or not _t_saj:
+            st.error("Credentials ontbreken.")
+        else:
+            # Lijst van alle medewerkers uit secrets (excl. admins)
+            _all_users = {
+                uname: udata.get("name", uname)
+                for uname, udata in st.secrets.get("auth", {}).get("users", {}).items()
+                if udata.get("role", "reviewer") != "admin"
+            }
+
+            if not _all_users:
+                st.info("Geen medewerkers gevonden in de secrets. "
+                        "Voeg medewerkers toe via Streamlit Cloud → Secrets.")
+            else:
+                _current_assignments = load_medewerker_assignments(_t_sid, _t_saj)
+                _all_client_names    = sorted(c.get("bedrijfsnaam", "") for c in _all_clients)
+
+                st.divider()
+                _changed = False
+                _new_assignments = dict(_current_assignments)
+
+                for _uname, _display_name in sorted(_all_users.items(), key=lambda x: x[1]):
+                    current_sel = _current_assignments.get(_uname, [])
+                    if current_sel == "ALL":
+                        current_sel = _all_client_names
+
+                    col_name, col_select = st.columns([1, 3])
+                    with col_name:
+                        st.markdown(f"**{_display_name}**")
+                        st.caption(f"@{_uname}")
+                    with col_select:
+                        new_sel = st.multiselect(
+                            "Klanten",
+                            options=_all_client_names,
+                            default=[c for c in current_sel if c in _all_client_names],
+                            key=f"team_sel_{_uname}",
+                            label_visibility="collapsed",
+                            placeholder="Selecteer klanten...",
+                        )
+                    _new_assignments[_uname] = new_sel
+                    if set(new_sel) != set(current_sel if isinstance(current_sel, list) else _all_client_names):
+                        _changed = True
+
+                    st.markdown(
+                        "<hr style='margin:6px 0;border:none;border-top:1px solid #f0f0f0;'>",
+                        unsafe_allow_html=True,
+                    )
+
+                if st.button("💾 Toewijzingen opslaan", type="primary", use_container_width=False):
+                    with st.spinner("Opslaan..."):
+                        save_medewerker_assignments(_t_sid, _t_saj, _new_assignments)
+                    st.success("✅ Toewijzingen opgeslagen!")
