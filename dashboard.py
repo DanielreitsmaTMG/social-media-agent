@@ -46,7 +46,7 @@ def _now_ams() -> datetime:
 
 st.set_page_config(
     page_title="Top Socials · TopMediaGroep",
-    page_icon="✨",
+    page_icon="https://www.topmediagroep.nl/data/pam/public/logo/logo_topmediagroep_transparent.png",
     layout="wide",
 )
 
@@ -459,12 +459,8 @@ hr {{ border-color: var(--line) !important; margin: 1.5rem 0 !important; }}
     padding: 4px 0 20px;
 }}
 .ts-logo {{
-    width: 38px; height: 38px; border-radius: 11px;
-    background: var(--p);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 19px;
-    box-shadow: 0 4px 14px rgba(79,70,229,.3);
-    flex-shrink: 0;
+    height: 32px; width: auto; flex-shrink: 0;
+    object-fit: contain; display: block;
 }}
 .ts-name {{
     font-size: 20px; font-weight: 800;
@@ -549,14 +545,10 @@ iframe[title="components.html"], iframe[data-testid="stIFrame"] {{
 </style>
 """, unsafe_allow_html=True)
 
-# ── Eigen favicon injecteren (vervangt Streamlit-sterretje in browsertab) ─────
+# ── Favicon: TopMediaGroep-logo ───────────────────────────────────────────────
 st.markdown(
-    """<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,"""
-    """<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'>"""
-    """<rect width='64' height='64' rx='14' fill='%234F46E5'/>"""
-    """<text x='32' y='46' font-family='Arial,sans-serif' font-size='28' """
-    """font-weight='800' fill='white' text-anchor='middle'>TS</text>"""
-    """</svg>">""",
+    '<link rel="icon" type="image/png" href="https://www.topmediagroep.nl'
+    '/data/pam/public/logo/logo_topmediagroep_transparent.png">',
     unsafe_allow_html=True,
 )
 
@@ -575,13 +567,12 @@ else:
         st.markdown(
             '<div style="max-width:380px;margin:100px auto 0;">'
             '<div style="text-align:center;margin-bottom:36px;">'
-            '<div style="display:inline-flex;align-items:center;justify-content:center;'
-            'width:52px;height:52px;border-radius:15px;background:#4F46E5;font-size:24px;'
-            'box-shadow:0 6px 20px rgba(79,70,229,.35);margin-bottom:16px;">✨</div>'
-            '<div style="font-size:28px;font-weight:800;color:#1D1D1F;letter-spacing:-.04em;'
+            '<img src="https://www.topmediagroep.nl/data/pam/public/logo/logo_topmediagroep_transparent.png" '
+            'style="height:40px;width:auto;object-fit:contain;margin-bottom:20px;" alt="TopMediaGroep">'
+            '<div style="font-size:22px;font-weight:800;color:#1D1D1F;letter-spacing:-.04em;'
             'font-family:Inter,-apple-system,sans-serif;">Top Socials</div>'
-            '<div style="font-size:14px;color:#86868B;margin-top:6px;font-weight:400;">'
-            'TopMediaGroep · Content platform</div>'
+            '<div style="font-size:13px;color:#86868B;margin-top:5px;font-weight:400;">'
+            'Content &amp; goedkeuring platform</div>'
             '</div>'
             '<div style="background:#fff;border-radius:22px;'
             'padding:32px 28px 28px;box-shadow:0 4px 30px rgba(0,0,0,.09),'
@@ -638,7 +629,7 @@ with st.sidebar:
 st.markdown(
     '<div class="ts-header">'
     '  <div style="display:flex;align-items:center;gap:12px;">'
-    '    <div class="ts-logo">✨</div>'
+    '    <img src="https://www.topmediagroep.nl/data/pam/public/logo/logo_topmediagroep_transparent.png" class="ts-logo" alt="TopMediaGroep">'
     '    <div>'
     '      <div class="ts-name">Top Socials</div>'
     '      <div class="ts-sub">Content &amp; goedkeuring voor TopMediaGroep</div>'
