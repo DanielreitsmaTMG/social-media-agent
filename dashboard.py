@@ -83,6 +83,91 @@ PLATFORM_LABELS = {
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
+WRITE_SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+]
+
+
+# ── Auth helpers (vroeg definiëren — worden vóór CSS/content aangeroepen) ────
+
+def _build_auth_config():
+    """Bouwt streamlit-authenticator config vanuit st.secrets['auth'].
+    Geeft (credentials_dict, (cookie_name, cookie_key, expiry)) terug,
+    of (None, None) als er geen auth-sectie in secrets staat (lokale dev)."""
+    try:
+        auth_sec = st.secrets.get("auth", {})
+        if not auth_sec or not auth_sec.get("users"):
+            return None, None
+        credentials = {"usernames": {}}
+        for uname, udata in auth_sec["users"].items():
+            credentials["usernames"][uname] = {
+                "name":     udata.get("name", uname),
+                "email":    udata.get("email", ""),
+                "password": udata.get("password", ""),
+            }
+        cookie_name = auth_sec.get("cookie_name",        "topsocials_auth")
+        cookie_key  = auth_sec.get("cookie_key",         "changeme_32chars")
+        expiry      = int(auth_sec.get("cookie_expiry_days", 7))
+        return credentials, (cookie_name, cookie_key, expiry)
+    except Exception:
+        return None, None
+
+
+def _current_user_role(username: str) -> str:
+    """Geeft de rol van de ingelogde gebruiker: 'admin' of 'reviewer'."""
+    try:
+        return st.secrets["auth"]["users"][username].get("role", "reviewer")
+    except Exception:
+        return "reviewer"
+
+
+@st.cache_data(ttl=30)
+def load_medewerker_assignments(spreadsheet_id: str, sa_info_json: str) -> dict:
+    """Laadt klant-toewijzingen uit de 'Medewerkers'-tab van de Google Sheet."""
+    try:
+        sa_info = json.loads(sa_info_json)
+        creds   = Credentials.from_service_account_info(sa_info, scopes=SCOPES)
+        gc      = gspread.authorize(creds)
+        sh      = gc.open_by_key(spreadsheet_id)
+        try:
+            ws = sh.worksheet("Medewerkers")
+        except gspread.WorksheetNotFound:
+            return {}
+        rows   = ws.get_all_records(default_blank="")
+        result = {}
+        for row in rows:
+            uname = str(row.get("gebruiker", "")).strip().lower()
+            raw   = str(row.get("klanten",   "")).strip()
+            if not uname:
+                continue
+            result[uname] = "ALL" if raw.upper() == "ALL" else [
+                k.strip() for k in raw.split(",") if k.strip()
+            ]
+        return result
+    except Exception:
+        return {}
+
+
+def save_medewerker_assignments(spreadsheet_id: str, sa_info_json: str,
+                                assignments: dict) -> None:
+    """Schrijft klant-toewijzingen terug naar de 'Medewerkers'-tab."""
+    sa_info = json.loads(sa_info_json)
+    creds   = WriteCredentials.from_service_account_info(sa_info, scopes=WRITE_SCOPES)
+    gc      = gspread.authorize(creds)
+    sh      = gc.open_by_key(spreadsheet_id)
+    try:
+        ws = sh.worksheet("Medewerkers")
+        ws.clear()
+    except gspread.WorksheetNotFound:
+        ws = sh.add_worksheet("Medewerkers", rows=100, cols=2)
+    rows = [["gebruiker", "klanten"]]
+    for uname, clients in assignments.items():
+        rows.append([uname, "ALL" if clients == "ALL" else ", ".join(clients)])
+    ws.update(rows, value_input_option="RAW")
+    ws.freeze(rows=1)
+    ws.format("A1:B1", {"textFormat": {"bold": True}})
+    load_medewerker_assignments.clear()
+
 
 def _next_wednesday_23() -> datetime:
     """Geeft de eerstvolgende woensdag om 23:00 Amsterdam-tijd terug (tz-naïeve datetime in Amsterdamse tijd)."""
@@ -719,95 +804,9 @@ with tab_klanten:
 
 # ── Goedkeuring tab ───────────────────────────────────────────────────────────
 
-WRITE_SCOPES = [
-    "https://www.googleapis.com/auth/spreadsheets",
-]
-
 STATUS_OPTIONS  = ["concept", "goedgekeurd", "afgewezen"]
 STATUS_COLORS   = {"concept": "#f59e0b", "goedgekeurd": "#22c55e", "afgewezen": "#ef4444"}
 STATUS_LABELS   = {"concept": "⏳ Concept", "goedgekeurd": "✅ Goedgekeurd", "afgewezen": "❌ Afgewezen"}
-
-
-# ── Auth helpers ──────────────────────────────────────────────────────────────
-
-def _build_auth_config():
-    """Bouwt streamlit-authenticator config vanuit st.secrets['auth'].
-    Geeft (credentials_dict, (cookie_name, cookie_key, expiry)) terug,
-    of (None, None) als er geen auth-sectie in secrets staat (lokale dev)."""
-    try:
-        auth_sec = st.secrets.get("auth", {})
-        if not auth_sec or not auth_sec.get("users"):
-            return None, None
-        credentials = {"usernames": {}}
-        for uname, udata in auth_sec["users"].items():
-            credentials["usernames"][uname] = {
-                "name":     udata.get("name", uname),
-                "email":    udata.get("email", ""),
-                "password": udata.get("password", ""),
-            }
-        cookie_name   = auth_sec.get("cookie_name",        "topsocials_auth")
-        cookie_key    = auth_sec.get("cookie_key",         "changeme_32chars")
-        expiry        = int(auth_sec.get("cookie_expiry_days", 7))
-        return credentials, (cookie_name, cookie_key, expiry)
-    except Exception:
-        return None, None
-
-
-def _current_user_role(username: str) -> str:
-    """Geeft de rol van de ingelogde gebruiker: 'admin' of 'reviewer'."""
-    try:
-        return st.secrets["auth"]["users"][username].get("role", "reviewer")
-    except Exception:
-        return "reviewer"
-
-
-@st.cache_data(ttl=30)
-def load_medewerker_assignments(spreadsheet_id: str, sa_info_json: str) -> dict:
-    """Laadt klant-toewijzingen uit de 'Medewerkers'-tab van de Google Sheet.
-    Geeft {username: [bedrijfsnaam, ...]} terug, of {username: 'ALL'} voor admins."""
-    try:
-        sa_info = json.loads(sa_info_json)
-        creds   = Credentials.from_service_account_info(sa_info, scopes=SCOPES)
-        gc      = gspread.authorize(creds)
-        sh      = gc.open_by_key(spreadsheet_id)
-        try:
-            ws = sh.worksheet("Medewerkers")
-        except gspread.WorksheetNotFound:
-            return {}
-        rows   = ws.get_all_records(default_blank="")
-        result = {}
-        for row in rows:
-            uname     = str(row.get("gebruiker", "")).strip().lower()
-            raw       = str(row.get("klanten", "")).strip()
-            if not uname:
-                continue
-            result[uname] = "ALL" if raw.upper() == "ALL" else [
-                k.strip() for k in raw.split(",") if k.strip()
-            ]
-        return result
-    except Exception:
-        return {}
-
-
-def save_medewerker_assignments(spreadsheet_id: str, sa_info_json: str,
-                                assignments: dict) -> None:
-    """Schrijft klant-toewijzingen terug naar de 'Medewerkers'-tab."""
-    sa_info = json.loads(sa_info_json)
-    creds   = WriteCredentials.from_service_account_info(sa_info, scopes=WRITE_SCOPES)
-    gc      = gspread.authorize(creds)
-    sh      = gc.open_by_key(spreadsheet_id)
-    try:
-        ws = sh.worksheet("Medewerkers")
-        ws.clear()
-    except gspread.WorksheetNotFound:
-        ws = sh.add_worksheet("Medewerkers", rows=100, cols=2)
-    rows = [["gebruiker", "klanten"]]
-    for uname, clients in assignments.items():
-        rows.append([uname, "ALL" if clients == "ALL" else ", ".join(clients)])
-    ws.update(rows, value_input_option="RAW")
-    ws.freeze(rows=1)
-    ws.format("A1:B1", {"textFormat": {"bold": True}})
-    load_medewerker_assignments.clear()
 
 
 def _get_write_client(sa_info: dict):
