@@ -527,6 +527,14 @@ hr {{ border-color: var(--line) !important; margin: 1.5rem 0 !important; }}
     color: var(--ink3); letter-spacing: .01em;
 }}
 
+/* ── Login-form: verberg Streamlit's eigen form-wrapper ── */
+[data-testid="stForm"] {{
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+}}
+
 /* ── iframe (Mail studio btn) ── */
 iframe[title="components.html"], iframe[data-testid="stIFrame"] {{
     display: block; border: none !important;
