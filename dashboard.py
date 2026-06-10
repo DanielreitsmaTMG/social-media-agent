@@ -13,10 +13,13 @@ Vereist in .env (of Streamlit Cloud secrets):
 """
 
 import base64
+import hashlib
+import hmac
 import io
 import json
 import os
 import re
+import time
 import zipfile
 from datetime import datetime, date, timedelta
 from urllib.parse import urlparse
@@ -26,6 +29,7 @@ import gspread
 import streamlit as st
 import streamlit.components.v1 as components
 import bcrypt
+from streamlit_cookies_controller import CookieController
 from google.oauth2.service_account import Credentials as WriteCredentials
 from google.oauth2.service_account import Credentials
 from dotenv import load_dotenv
@@ -111,6 +115,44 @@ def _current_user_role(username: str) -> str:
         return _auth_users()[username].get("role", "reviewer")
     except Exception:
         return "reviewer"
+
+
+# ── Persistente login (12 uur via signed cookie) ─────────────────────────────
+SESSION_HOURS = 12
+AUTH_COOKIE_NAME = "ts_auth_token"
+
+
+def _cookie_secret() -> str:
+    try:
+        return str(st.secrets.get("auth", {}).get("cookie_secret", "top-socials-dev-secret"))
+    except Exception:
+        return "top-socials-dev-secret"
+
+
+def _sign(payload: str) -> str:
+    return hmac.new(_cookie_secret().encode(), payload.encode(), hashlib.sha256).hexdigest()
+
+
+def _make_session_token(username: str) -> str:
+    """Maakt een ondertekend token dat 12 uur geldig is."""
+    expiry = int(time.time()) + SESSION_HOURS * 3600
+    payload = f"{username}|{expiry}"
+    token = f"{payload}|{_sign(payload)}"
+    return base64.urlsafe_b64encode(token.encode()).decode()
+
+
+def _verify_session_token(token: str):
+    """Geeft de gebruikersnaam terug als het token geldig en niet verlopen is, anders None."""
+    try:
+        raw = base64.urlsafe_b64decode(token.encode()).decode()
+        username, expiry, sig = raw.split("|")
+        if not hmac.compare_digest(_sign(f"{username}|{expiry}"), sig):
+            return None
+        if int(expiry) < time.time():
+            return None
+        return username
+    except Exception:
+        return None
 
 
 @st.cache_data(ttl=30)
@@ -592,6 +634,19 @@ if not _auth_active:
     _logged_in_name = "Developer (lokaal)"
     _logged_in_role = "admin"
 else:
+    _cookie_controller = CookieController()
+
+    # ── Sessie herstellen vanuit cookie (blijft 12 uur geldig) ──────────────────
+    if not st.session_state.get("_ts_logged_in"):
+        _token = _cookie_controller.get(AUTH_COOKIE_NAME)
+        if _token:
+            _restored_user = _verify_session_token(_token)
+            if _restored_user and _restored_user in _users:
+                st.session_state["_ts_logged_in"] = True
+                st.session_state["_ts_username"]  = _restored_user
+                st.session_state["_ts_name"]      = _users[_restored_user].get("name", _restored_user)
+                st.session_state["_ts_role"]      = _users[_restored_user].get("role", "reviewer")
+
     # ── Login-check ───────────────────────────────────────────────────────────
     if not st.session_state.get("_ts_logged_in"):
         st.markdown(
@@ -623,6 +678,11 @@ else:
                 st.session_state["_ts_username"]    = user_key
                 st.session_state["_ts_name"]        = user_data.get("name", user_key)
                 st.session_state["_ts_role"]        = user_data.get("role", "reviewer")
+                _cookie_controller.set(
+                    AUTH_COOKIE_NAME,
+                    _make_session_token(user_key),
+                    max_age=SESSION_HOURS * 3600,
+                )
                 st.rerun()
             else:
                 st.error("❌ Onjuist e-mailadres of wachtwoord.")
@@ -649,6 +709,7 @@ with st.sidebar:
         if st.button("Uitloggen", use_container_width=True):
             for k in ["_ts_logged_in", "_ts_username", "_ts_name", "_ts_role"]:
                 st.session_state.pop(k, None)
+            _cookie_controller.remove(AUTH_COOKIE_NAME)
             st.rerun()
 
 # ── Merk-header ───────────────────────────────────────────────────────────────
