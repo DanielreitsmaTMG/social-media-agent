@@ -598,6 +598,15 @@ div[data-testid="stForm"] {{
     max-width: 380px;
     margin: 0 auto !important;
 }}
+/* Vertaal Streamlit's "Press Enter to submit form"-hint naar Nederlands */
+div[data-testid="stForm"] [data-testid="InputInstructions"] {{
+    font-size: 0 !important;
+}}
+div[data-testid="stForm"] [data-testid="InputInstructions"]::after {{
+    content: "Druk op Enter om te bevestigen";
+    font-size: 12px;
+    color: var(--ink3);
+}}
 
 /* ── iframe (Mail studio btn) ── */
 iframe[title="components.html"], iframe[data-testid="stIFrame"] {{
