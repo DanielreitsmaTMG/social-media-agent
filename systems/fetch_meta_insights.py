@@ -97,8 +97,36 @@ def _graph_get(path: str, params: dict) -> dict:
     return data
 
 
+def _graph_get_url(url: str) -> dict:
+    resp = requests.get(url, timeout=20)
+    data = resp.json()
+    if "error" in data:
+        raise RuntimeError(data["error"].get("message", "Onbekende Graph API-fout"))
+    return data
+
+
+def _ig_insight_total(ig_id: str, metric: str, since, until, token: str):
+    """Haalt een IG-insight op via metric_type=total_value (nieuwe Graph API-stijl)."""
+    data = _graph_get(
+        f"{ig_id}/insights",
+        {
+            "metric": metric,
+            "period": "day",
+            "metric_type": "total_value",
+            "since": since.isoformat(),
+            "until": until.isoformat(),
+            "access_token": token,
+        },
+    )
+    for entry in data.get("data", []):
+        total = entry.get("total_value", {})
+        if isinstance(total.get("value"), (int, float)):
+            return total["value"]
+    return None
+
+
 def _instagram_stats(ig_id: str, token: str) -> dict:
-    """Haalt volgers, bereik, impressies en profielbezoeken (laatste 7 dagen) op."""
+    """Haalt volgers, bereik, profielweergaven en profielbezoeken (laatste 7 dagen) op."""
     out = {
         "instagram_volgers": "",
         "instagram_bereik_7d": "",
@@ -113,40 +141,32 @@ def _instagram_stats(ig_id: str, token: str) -> dict:
     except RuntimeError as e:
         print(f"    ⚠️  IG volgers ophalen mislukt: {e}")
 
-    # Bereik / impressies / profielbezoeken laatste 7 dagen
+    # Bereik / profielweergaven / profielbezoeken laatste 7 dagen
+    # (Graph API v21+: deze metrics vereisen metric_type=total_value;
+    #  "impressions" is uitgefaseerd, vervangen door "views")
     until = date.today()
     since = until - timedelta(days=7)
     for metric, key in [
         ("reach", "instagram_bereik_7d"),
-        ("impressions", "instagram_impressies_7d"),
+        ("views", "instagram_impressies_7d"),
         ("profile_views", "instagram_profielbezoeken_7d"),
     ]:
         try:
-            data = _graph_get(
-                f"{ig_id}/insights",
-                {
-                    "metric": metric,
-                    "period": "day",
-                    "since": since.isoformat(),
-                    "until": until.isoformat(),
-                    "access_token": token,
-                },
-            )
-            values = []
-            for entry in data.get("data", []):
-                for v in entry.get("values", []):
-                    if isinstance(v.get("value"), (int, float)):
-                        values.append(v["value"])
-            if values:
-                out[key] = sum(values)
+            value = _ig_insight_total(ig_id, metric, since, until, token)
+            if value is not None:
+                out[key] = value
         except RuntimeError as e:
             print(f"    ⚠️  IG {metric} ophalen mislukt: {e}")
 
     return out
 
 
-def _facebook_stats(page_id: str, token: str) -> dict:
-    """Haalt paginavolgers, bereik, impressies en engagement (laatste 7 dagen) op."""
+def _facebook_stats(page_id: str, token: str, page_token: str = None) -> dict:
+    """Haalt paginavolgers, bereik, paginaweergaven en engagement (laatste 7 dagen) op.
+
+    Insights-endpoints (`/insights`) vereisen een Page Access Token, niet het
+    systeemgebruiker-token zelf. `page_token` wordt opgehaald via /me/accounts.
+    """
     out = {
         "facebook_volgers": "",
         "facebook_bereik_7d": "",
@@ -160,11 +180,15 @@ def _facebook_stats(page_id: str, token: str) -> dict:
     except RuntimeError as e:
         print(f"    ⚠️  FB volgers ophalen mislukt: {e}")
 
+    if not page_token:
+        print("    ⚠️  Geen page access token gevonden — bereik/impressies/engagement overgeslagen")
+        return out
+
     until = date.today()
     since = until - timedelta(days=7)
     for metric, key in [
         ("page_impressions_unique", "facebook_bereik_7d"),
-        ("page_impressions", "facebook_impressies_7d"),
+        ("page_views_total", "facebook_impressies_7d"),
         ("page_post_engagements", "facebook_engagement_7d"),
     ]:
         try:
@@ -175,7 +199,7 @@ def _facebook_stats(page_id: str, token: str) -> dict:
                     "period": "day",
                     "since": since.isoformat(),
                     "until": until.isoformat(),
-                    "access_token": token,
+                    "access_token": page_token,
                 },
             )
             values = []
@@ -189,6 +213,25 @@ def _facebook_stats(page_id: str, token: str) -> dict:
             print(f"    ⚠️  FB {metric} ophalen mislukt: {e}")
 
     return out
+
+
+def _page_access_tokens(token: str) -> dict:
+    """Haalt per Facebook-pagina een Page Access Token op (nodig voor /insights)."""
+    tokens = {}
+    url = "me/accounts"
+    params = {"access_token": token, "limit": 100}
+    while url:
+        try:
+            data = _graph_get(url, params) if params else _graph_get_url(url)
+        except RuntimeError as e:
+            print(f"  ⚠️  Page access tokens ophalen mislukt: {e}")
+            break
+        for page in data.get("data", []):
+            if page.get("id") and page.get("access_token"):
+                tokens[page["id"]] = page["access_token"]
+        url = data.get("paging", {}).get("next")
+        params = None
+    return tokens
 
 
 def main():
@@ -245,6 +288,8 @@ def main():
 
     print(f"{len(to_process)} klant(en) met Meta-koppeling te verwerken...\n")
 
+    page_tokens = _page_access_tokens(token)
+
     today = date.today().isoformat()
     new_rows = []
 
@@ -260,7 +305,7 @@ def main():
         if ig_id:
             row_data.update(_instagram_stats(ig_id, token))
         if page_id:
-            row_data.update(_facebook_stats(page_id, token))
+            row_data.update(_facebook_stats(page_id, token, page_tokens.get(page_id)))
 
         new_rows.append([row_data[h] for h in STATS_HEADERS])
 

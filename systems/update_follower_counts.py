@@ -202,9 +202,9 @@ def main():
         updates = []
         for col_name, value in counts.items():
             if col_name in col_map:
-                col_letter = gspread.utils.rowcol_to_a1(row_idx, col_map[col_name])[:-1]
+                cell = gspread.utils.rowcol_to_a1(row_idx, col_map[col_name])
                 updates.append({
-                    "range": f"{col_letter}{row_idx}",
+                    "range": cell,
                     "values": [[value]],
                 })
 
