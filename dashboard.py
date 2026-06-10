@@ -1228,10 +1228,9 @@ def _eff_note(cur_updates, row_idx, post):
     return ov[1] if ov else post.get("opmerkingen", "")
 
 
-@st.fragment
 def _render_post_card(selected_tab, row_idx, post, color, client_dict, spreadsheet_id, sa_json):
-    """Eigen mini-fragment per post: een klik op ✅/❌ rerendert alleen dít kaartje,
-    niet de hele klantweergave (metrics, navigator, alle andere posts)."""
+    """Rendert één post-kaart. Maakt deel uit van de render_approval_interface-fragment,
+    zodat een klik op ✅/❌ ook de voortgangsbalk, metrics en actieknoppen direct bijwerkt."""
     state_key    = f"updates_{selected_tab}"
     pending_key  = f"pending_{selected_tab}"
     titles_key   = f"titles_{selected_tab}"
