@@ -1,5 +1,5 @@
 """
-Haalt de volgers-demografie (leeftijd, geslacht, land) op van gekoppelde
+Haalt de volgers-demografie (leeftijd/geslacht en geslacht) op van gekoppelde
 Instagram-accounts en schrijft dit naar het tabblad "Demografie".
 
 Vereist in .env:
@@ -41,7 +41,7 @@ DEMO_HEADERS = ["datum", "klant_id", "bedrijfsnaam", "dimensie", "waarde", "aant
 
 BREAKDOWNS = {
     "leeftijd_geslacht": "age,gender",
-    "land": "country",
+    "geslacht": "gender",
 }
 
 

@@ -86,9 +86,11 @@ Klanten zonder deze ID's worden overgeslagen bij het ophalen van statistieken.
 
 - **`systems/fetch_audience_demographics.py`** *(nieuw)* — haalt per klant met
   `instagram_business_account_id` de volgers-demografie (leeftijd/geslacht en
-  land) op via `follower_demographics` en schrijft dit naar tabblad
+  geslacht) op via `follower_demographics` en schrijft dit naar tabblad
   **"Demografie"**. Alleen Instagram; vereist ~100+ volgers (anders 0
   datapunten). De-dupliceert metingen van dezelfde dag bij herhaalde runs.
+  (Land-breakdown is verwijderd op verzoek van de klant — niet interessant
+  genoeg; vervangen door een eenvoudige man/vrouw-verdeling.)
 
 - **`systems/update_performance_insights.py`** *(nieuw)* — analyseert per
   klant de best presterende posts uit "Statistieken_Posts" en laat Claude
@@ -109,7 +111,7 @@ Tabblad **"📊 Statistieken"** in `dashboard.py`, per klant:
   engagement_rate, met afbeeldingvoorbeeld, bereik/interacties en link.
 - **🕐 Beste dagen om te posten** (#6): bar chart van gemiddeld bereik
   (weergaven) per weekdag, op basis van `post_datum`.
-- **👥 Doelgroep** (#7): bar charts leeftijd/geslacht en land uit "Demografie"
+- **👥 Doelgroep** (#7): bar charts leeftijd/geslacht en man/vrouw uit "Demografie"
   (alleen als data beschikbaar — anders nette melding over volgersdrempel).
 - **🤖 AI-samenvatting** (#4): korte Nederlandse samenvatting (Claude Haiku,
   1 uur gecached) van recente cijfers + top posts.

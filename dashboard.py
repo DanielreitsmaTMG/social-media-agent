@@ -935,6 +935,10 @@ div[class*="st-key-statcard-"] {{
 div[class*="st-key-statcard-"] [data-testid="stVerticalBlock"] {{
     gap: 0.4rem !important;
 }}
+/* Verberg de zoom/fullscreen-toolbar op grafieken in de Statistieken-tab */
+div[class*="st-key-statcard-"] [data-testid="stElementToolbar"] {{
+    display: none !important;
+}}
 .ts-stat-title {{
     font-size: 13px; font-weight: 700; color: var(--ink);
     margin: 0 0 2px; letter-spacing: -0.01em;
@@ -2388,11 +2392,16 @@ with tab_statistieken:
                         )
                     else:
                         import pandas as pd
+                        GESLACHT_LABELS = {"F": "Vrouw", "M": "Man", "U": "Onbekend"}
                         demo_cols = st.columns(len(demo_per_dim))
                         for i, (dim, rows) in enumerate(demo_per_dim.items()):
-                            title = "Leeftijd / geslacht" if dim == "leeftijd_geslacht" else "Land"
+                            title = "Leeftijd / geslacht" if dim == "leeftijd_geslacht" else "Man / vrouw"
+                            labels = {
+                                GESLACHT_LABELS.get(r["waarde"], r["waarde"]) if dim == "geslacht" else r["waarde"]: r["aantal"]
+                                for r in rows
+                            }
                             df_demo = pd.DataFrame(
-                                {r["waarde"]: r["aantal"] for r in rows}.items(),
+                                labels.items(),
                                 columns=["categorie", "aantal"],
                             ).set_index("categorie").sort_values("aantal", ascending=False).head(10)
                             with demo_cols[i]:
