@@ -77,7 +77,7 @@ Klanten zonder deze ID's worden overgeslagen bij het ophalen van statistieken.
   `instagram_business_account_id` en/of `facebook_page_id` de laatste posts op
   (standaard 10 per platform, `--limit` instelbaar) met bereik, interacties en
   berekende `engagement_rate`, en schrijft dit naar tabblad
-  **"Posts_Statistieken"**. Voedt de "Best presterende posts",
+  **"Statistieken_Posts"**. Voedt de "Best presterende posts",
   "Beste dagen om te posten" en de prestatie-inzichten voor de
   contentgenerator.
 
@@ -88,7 +88,7 @@ Klanten zonder deze ID's worden overgeslagen bij het ophalen van statistieken.
   datapunten). De-dupliceert metingen van dezelfde dag bij herhaalde runs.
 
 - **`systems/update_performance_insights.py`** *(nieuw)* — analyseert per
-  klant de best presterende posts uit "Posts_Statistieken" en laat Claude
+  klant de best presterende posts uit "Statistieken_Posts" en laat Claude
   (Haiku) een kort Nederlands advies schrijven over welke onderwerpen/
   invalshoeken/formats goed werken. Schrijft dit naar de kolom
   `prestatie_inzichten` in de klanten-sheet (sheet1), die vervolgens automatisch
@@ -101,7 +101,7 @@ Tabblad **"📊 Statistieken"** in `dashboard.py`, per klant:
 - Kaarten met volgers (+ groei t.o.v. vorige meting), bereik, weergaven en
   engagement (uit "Statistieken"-tab) + lijngrafiek volgersgroei over tijd.
 - **Gemiddelde engagement rate** per platform (#2), berekend uit
-  "Posts_Statistieken".
+  "Statistieken_Posts".
 - **🏆 Best presterende posts** (#1): top 5 posts gesorteerd op
   engagement_rate, met link.
 - **🕐 Beste dagen om te posten** (#6): bar chart van gemiddelde
@@ -132,6 +132,14 @@ Tabblad **"📊 Statistieken"** in `dashboard.py`, per klant:
 - **gspread A1-bug**: `rowcol_to_a1(row, col)[:-1] + str(row)` gaat fout
   zodra `row >= 10` (snijdt het laatste cijfer van het rijnummer i.p.v. de
   kolomletter af). Gebruik gewoon `rowcol_to_a1(row, col)` direct als range.
+- **Tabblad-naamgeving**: gebruik NOOIT een naam die begint met `Posts_` voor
+  nieuwe tabbladen — `dashboard.py` (Goedkeuring-tab, `load_post_tabs()`)
+  beschouwt elk tabblad dat begint met `Posts_` als een wekelijkse
+  content-tab van een klant (bijv. `Posts_2026_W24`). Het tabblad met
+  post-statistieken heet daarom **"Statistieken_Posts"** (niet
+  "Posts_Statistieken") — anders verdwijnen de teksten/beeldtitels uit de
+  Goedkeuring-tab omdat dit tabblad ten onrechte als content-tab wordt
+  geladen (gebeurd op 10-6-2026, gefixt door hernoemen).
 
 ## Status koppeling per klant (10-6-2026)
 Eerste batch van 11 klanten succesvol gekoppeld en getest (volgers, bereik,
@@ -153,7 +161,7 @@ schema) zodat de "Statistieken"-tab een trendgeschiedenis opbouwt.
 ## Status uitbreiding (10-6-2026): posts, demografie & prestatie-inzichten
 
 - `systems/fetch_post_insights.py` succesvol gedraaid: 190 rijen in
-  "Posts_Statistieken" voor de 11 gekoppelde klanten (10-20 posts per klant).
+  "Statistieken_Posts" voor de 11 gekoppelde klanten (10-20 posts per klant).
 - `systems/fetch_audience_demographics.py` succesvol gedraaid: 85 rijen in
   "Demografie" — alleen DR-003 (Artena) en DR-005 (Cycle for Hope) hebben
   genoeg volgers (≥~100) voor demografische data; overige IG-accounts geven 0
@@ -166,7 +174,7 @@ schema) zodat de "Statistieken"-tab een trendgeschiedenis opbouwt.
   2. `python systems/fetch_post_insights.py`
   3. `python systems/fetch_audience_demographics.py`
   4. `python systems/update_performance_insights.py`
-- Posts_Statistieken-kolommen (`bereik`, `interacties`, `engagement_rate`)
+- Statistieken_Posts-kolommen (`bereik`, `interacties`, `engagement_rate`)
   worden door Google Sheets in NL-notatie opgeslagen (komma als
   decimaalteken, bijv. `"0,0625"`). `dashboard.py` parseert dit via de
   `_to_float()`-helper.

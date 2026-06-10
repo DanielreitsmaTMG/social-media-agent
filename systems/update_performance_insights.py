@@ -1,7 +1,7 @@
 """
 Genereert per klant een kort, AI-gebaseerd inzicht ("welke onderwerpen/insteken/
 formats presteren goed") op basis van de best presterende posts uit het tabblad
-"Posts_Statistieken", en schrijft dit naar de kolom `prestatie_inzichten` in de
+"Statistieken_Posts", en schrijft dit naar de kolom `prestatie_inzichten` in de
 klanten-sheet (sheet1). Dit wordt vervolgens automatisch meegenomen door
 `generate_weekly_posts.py` als extra context bij het genereren van nieuwe content
 (zie `_build_prompt`).
@@ -34,7 +34,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive",
 ]
 
-POSTS_SHEET_NAME = "Posts_Statistieken"
+POSTS_SHEET_NAME = "Statistieken_Posts"
 INSIGHTS_COLUMN = "prestatie_inzichten"
 MODEL = "claude-haiku-4-5"
 

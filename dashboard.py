@@ -387,7 +387,7 @@ def _stat_delta(history: list[dict], col: str):
 
 # ── Posts-statistieken & demografie (Meta-koppeling, vervolg) ────────────────
 
-POSTS_SHEET_NAME = "Posts_Statistieken"
+POSTS_SHEET_NAME = "Statistieken_Posts"
 DEMO_SHEET_NAME  = "Demografie"
 
 DAGEN_NL = ["Maandag", "Dinsdag", "Woensdag", "Donderdag", "Vrijdag", "Zaterdag", "Zondag"]
@@ -407,7 +407,7 @@ def _to_float(value):
 
 @st.cache_data(ttl=300)
 def load_post_insights() -> list[dict]:
-    """Leest het tabblad 'Posts_Statistieken'. Geeft [] terug als het nog niet bestaat."""
+    """Leest het tabblad 'Statistieken_Posts'. Geeft [] terug als het nog niet bestaat."""
     spreadsheet_id = os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID") or st.secrets.get("GOOGLE_SHEETS_SPREADSHEET_ID")
     if not spreadsheet_id:
         return []

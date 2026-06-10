@@ -1,6 +1,6 @@
 """
 Haalt per klant de laatste posts (Instagram + Facebook) op met hun bereik en
-engagement, en schrijft dit naar het tabblad "Posts_Statistieken". Dit voedt:
+engagement, en schrijft dit naar het tabblad "Statistieken_Posts". Dit voedt:
 
 - Top-presterende posts per klant (dashboard)
 - Engagement rate per post
@@ -38,7 +38,7 @@ SCOPES = [
 GRAPH_VERSION = "v21.0"
 GRAPH_URL = f"https://graph.facebook.com/{GRAPH_VERSION}"
 
-POSTS_SHEET_NAME = "Posts_Statistieken"
+POSTS_SHEET_NAME = "Statistieken_Posts"
 POSTS_HEADERS = [
     "datum_opgehaald",
     "klant_id",
