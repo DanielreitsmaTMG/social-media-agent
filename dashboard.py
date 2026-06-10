@@ -370,7 +370,8 @@ html, body, .stApp,
     visibility: hidden; height: 0; overflow: hidden;
 }}
 [data-testid="stToolbar"], [data-testid="manage-app-button"],
-.stDeployButton, [data-testid="stDecoration"], [data-testid="stStatusWidget"] {{
+.stDeployButton, [data-testid="stDecoration"], [data-testid="stStatusWidget"],
+[class*="viewerBadge"], [data-testid="stAppViewerBadge"] {{
     display: none !important;
 }}
 
@@ -502,26 +503,49 @@ hr {{ border-color: var(--line) !important; margin: 1.5rem 0 !important; }}
 .ts-header {{
     display: flex; align-items: center;
     justify-content: space-between;
-    padding: 4px 0 20px;
+    padding: 18px 28px;
+    margin-bottom: 22px;
+    background: var(--surf);
+    border-radius: var(--r-card);
+    box-shadow: var(--shadow);
+    position: relative;
+    overflow: hidden;
+}}
+.ts-header::before {{
+    content: "";
+    position: absolute; left: 0; top: 0; bottom: 0; width: 5px;
+    background: linear-gradient(180deg, var(--p), var(--pd));
+}}
+.ts-logo-wrap {{
+    display: flex; align-items: center; justify-content: center;
+    width: 52px; height: 52px; border-radius: 14px;
+    background: var(--ps); flex-shrink: 0;
 }}
 .ts-logo {{
-    height: 32px; width: auto; flex-shrink: 0;
+    height: 34px; width: auto;
     object-fit: contain; display: block;
 }}
 .ts-name {{
-    font-size: 20px; font-weight: 800;
+    font-size: 21px; font-weight: 800;
     color: var(--ink); letter-spacing: -0.03em;
-    line-height: 1;
+    line-height: 1.2;
+}}
+.ts-brandtag {{
+    display: inline-block; margin-left: 8px;
+    font-size: 10px; font-weight: 700; letter-spacing: .08em;
+    color: var(--p); background: var(--ps);
+    padding: 2px 8px; border-radius: 99px; vertical-align: middle;
+    text-transform: uppercase;
 }}
 .ts-sub {{
     font-size: 12px; font-weight: 400;
-    color: var(--ink2); margin-top: 2px; letter-spacing: .01em;
+    color: var(--ink2); margin-top: 3px; letter-spacing: .01em;
 }}
 .ts-live {{
     display: inline-flex; align-items: center; gap: 6px;
     background: rgba(52,199,89,.12); color: #1a7f37;
-    font-size: 11px; font-weight: 600; letter-spacing: .04em;
-    padding: 5px 12px; border-radius: 99px;
+    font-size: 11px; font-weight: 700; letter-spacing: .06em;
+    padding: 6px 14px; border-radius: 99px;
 }}
 .ts-live-dot {{
     width: 6px; height: 6px; border-radius: 99px;
@@ -531,6 +555,17 @@ hr {{ border-color: var(--line) !important; margin: 1.5rem 0 !important; }}
 }}
 @keyframes pulse {{
     0%, 100% {{ opacity:1; }} 50% {{ opacity:.4; }}
+}}
+
+/* ── KPI-kaarten: gekleurde accentstrip per kaart ── */
+[data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) > div:nth-of-type(1) [data-testid="stMetric"] {{
+    border-top: 3px solid var(--p) !important;
+}}
+[data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) > div:nth-of-type(2) [data-testid="stMetric"] {{
+    border-top: 3px solid var(--ok) !important;
+}}
+[data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) > div:nth-of-type(3) [data-testid="stMetric"] {{
+    border-top: 3px solid var(--warn) !important;
 }}
 
 /* ── Klant-tegels ── */
@@ -724,11 +759,13 @@ with st.sidebar:
 # ── Merk-header ───────────────────────────────────────────────────────────────
 st.markdown(
     '<div class="ts-header">'
-    '  <div style="display:flex;align-items:center;gap:12px;">'
-    '    <img src="https://www.topmediagroep.nl/data/pam/public/logo/logo_topmediagroep_transparent.png" class="ts-logo" alt="TopMediaGroep">'
+    '  <div style="display:flex;align-items:center;gap:16px;">'
+    '    <div class="ts-logo-wrap">'
+    '      <img src="https://www.topmediagroep.nl/data/pam/public/logo/logo_topmediagroep_transparent.png" class="ts-logo" alt="TopMediaGroep">'
+    '    </div>'
     '    <div>'
-    '      <div class="ts-name">Top Socials</div>'
-    '      <div class="ts-sub">Content &amp; goedkeuring voor TopMediaGroep</div>'
+    '      <div class="ts-name">Top Socials<span class="ts-brandtag">TopMediaGroep</span></div>'
+    '      <div class="ts-sub">Content &amp; goedkeuring platform</div>'
     '    </div>'
     '  </div>'
     '  <div class="ts-live"><div class="ts-live-dot"></div>LIVE</div>'
