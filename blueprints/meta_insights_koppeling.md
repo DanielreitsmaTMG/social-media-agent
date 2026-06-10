@@ -73,12 +73,46 @@ Klanten zonder deze ID's worden overgeslagen bij het ophalen van statistieken.
   Draait via een geplande taak (bijv. dagelijks), net als
   `update_follower_counts.py`.
 
+- **`systems/fetch_post_insights.py`** *(nieuw)* — haalt per klant met
+  `instagram_business_account_id` en/of `facebook_page_id` de laatste posts op
+  (standaard 10 per platform, `--limit` instelbaar) met bereik, interacties en
+  berekende `engagement_rate`, en schrijft dit naar tabblad
+  **"Posts_Statistieken"**. Voedt de "Best presterende posts",
+  "Beste dagen om te posten" en de prestatie-inzichten voor de
+  contentgenerator.
+
+- **`systems/fetch_audience_demographics.py`** *(nieuw)* — haalt per klant met
+  `instagram_business_account_id` de volgers-demografie (leeftijd/geslacht en
+  land) op via `follower_demographics` en schrijft dit naar tabblad
+  **"Demografie"**. Alleen Instagram; vereist ~100+ volgers (anders 0
+  datapunten). De-dupliceert metingen van dezelfde dag bij herhaalde runs.
+
+- **`systems/update_performance_insights.py`** *(nieuw)* — analyseert per
+  klant de best presterende posts uit "Posts_Statistieken" en laat Claude
+  (Haiku) een kort Nederlands advies schrijven over welke onderwerpen/
+  invalshoeken/formats goed werken. Schrijft dit naar de kolom
+  `prestatie_inzichten` in de klanten-sheet (sheet1), die vervolgens automatisch
+  wordt meegenomen door `generate_weekly_posts.py` (zie blueprint
+  *weekly_content_generation*). **Sluit de loop tussen statistieken en content.**
+  Gebruikt `ANTHROPIC_API_KEY`.
+
 ## Output / Dashboard
-- Nieuw tabblad **"📊 Statistieken"** in `dashboard.py`:
-  - Per klant: kaarten met volgers (+ groei t.o.v. vorige meting), bereik,
-    impressies, engagement-rate.
-  - Lijngrafiek van volgersgroei/bereik over tijd (uit de "Statistieken"-tab).
-  - Klanten zonder Meta-koppeling: nette melding "Nog niet gekoppeld".
+Tabblad **"📊 Statistieken"** in `dashboard.py`, per klant:
+- Kaarten met volgers (+ groei t.o.v. vorige meting), bereik, weergaven en
+  engagement (uit "Statistieken"-tab) + lijngrafiek volgersgroei over tijd.
+- **Gemiddelde engagement rate** per platform (#2), berekend uit
+  "Posts_Statistieken".
+- **🏆 Best presterende posts** (#1): top 5 posts gesorteerd op
+  engagement_rate, met link.
+- **🕐 Beste dagen om te posten** (#6): bar chart van gemiddelde
+  engagement_rate per weekdag, op basis van `post_datum`.
+- **👥 Doelgroep** (#7): bar charts leeftijd/geslacht en land uit "Demografie"
+  (alleen als data beschikbaar — anders nette melding over volgersdrempel).
+- **🤖 AI-samenvatting** (#4): korte Nederlandse samenvatting (Claude Haiku,
+  1 uur gecached) van recente cijfers + top posts.
+- Klanten zonder Meta-koppeling: nette melding "Nog niet gekoppeld".
+- Klanten zonder post-data: nette melding om eerst `fetch_post_insights.py`
+  te draaien.
 
 ## Edge cases / geleerde lessen
 - Facebook Graph API rate limit: standaard ~200 calls/uur per gebruiker per
@@ -115,3 +149,24 @@ worden toegevoegd door de klant/pagina-eigenaar (zie stap 5 hierboven).
 `systems/fetch_meta_insights.py` draait nu handmatig; kan later als dagelijkse
 cronjob worden ingepland (bijv. via `systems/update_follower_counts.py`'s
 schema) zodat de "Statistieken"-tab een trendgeschiedenis opbouwt.
+
+## Status uitbreiding (10-6-2026): posts, demografie & prestatie-inzichten
+
+- `systems/fetch_post_insights.py` succesvol gedraaid: 190 rijen in
+  "Posts_Statistieken" voor de 11 gekoppelde klanten (10-20 posts per klant).
+- `systems/fetch_audience_demographics.py` succesvol gedraaid: 85 rijen in
+  "Demografie" — alleen DR-003 (Artena) en DR-005 (Cycle for Hope) hebben
+  genoeg volgers (≥~100) voor demografische data; overige IG-accounts geven 0
+  datapunten (nette melding in dashboard).
+- `systems/update_performance_insights.py` succesvol gedraaid: kolom
+  `prestatie_inzichten` gevuld voor alle 11 klanten met post-data.
+- **Aanbevolen volgorde voor periodieke run** (bijv. wekelijks, vóór de
+  contentgeneratie op woensdag):
+  1. `python systems/fetch_meta_insights.py`
+  2. `python systems/fetch_post_insights.py`
+  3. `python systems/fetch_audience_demographics.py`
+  4. `python systems/update_performance_insights.py`
+- Posts_Statistieken-kolommen (`bereik`, `interacties`, `engagement_rate`)
+  worden door Google Sheets in NL-notatie opgeslagen (komma als
+  decimaalteken, bijv. `"0,0625"`). `dashboard.py` parseert dit via de
+  `_to_float()`-helper.

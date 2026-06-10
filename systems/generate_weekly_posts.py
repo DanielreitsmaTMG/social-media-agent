@@ -64,6 +64,14 @@ def _build_prompt(client: dict, scraped_context: str, week_start: date, week_end
     extra = client.get("extra_context", "").strip()
     extra_section = f"\nExtra context voor deze week:\n{extra}" if extra else ""
 
+    prestatie = client.get("prestatie_inzichten", "").strip()
+    prestatie_section = (
+        f"\nPrestatie-inzichten op basis van eerdere posts (gebruik dit om de invalshoek/onderwerpen "
+        f"af te stemmen op wat goed werkt bij deze doelgroep):\n{prestatie}"
+        if prestatie
+        else ""
+    )
+
     scraped_section = (
         f"\nContext gescraped van de online aanwezigheid van de klant "
         f"(gebruik dit om de toon en informatie beter af te stemmen):\n{scraped_context}"
@@ -102,7 +110,7 @@ Klantprofiel:
 - Kernthema's: {client['kernthemas']}
 - Vaste hashtags: {client['vaste_hashtags']}
 - Vermijd altijd: {client['vermijd']}
-- Taal van de posts: {lang}{extra_section}{scraped_section}
+- Taal van de posts: {lang}{extra_section}{scraped_section}{prestatie_section}
 
 Genereer:
 {chr(10).join(platform_lines)}

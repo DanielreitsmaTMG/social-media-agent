@@ -385,6 +385,174 @@ def _stat_delta(history: list[dict], col: str):
     return f"{sign}{int(diff)} t.o.v. vorige meting"
 
 
+# ── Posts-statistieken & demografie (Meta-koppeling, vervolg) ────────────────
+
+POSTS_SHEET_NAME = "Posts_Statistieken"
+DEMO_SHEET_NAME  = "Demografie"
+
+DAGEN_NL = ["Maandag", "Dinsdag", "Woensdag", "Donderdag", "Vrijdag", "Zaterdag", "Zondag"]
+
+
+def _to_float(value):
+    """Parseert getallen die door Google Sheets als '0,0625' (NL-notatie) zijn opgeslagen."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return float(str(value).replace(",", "."))
+    except (ValueError, TypeError):
+        return None
+
+
+@st.cache_data(ttl=300)
+def load_post_insights() -> list[dict]:
+    """Leest het tabblad 'Posts_Statistieken'. Geeft [] terug als het nog niet bestaat."""
+    spreadsheet_id = os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID") or st.secrets.get("GOOGLE_SHEETS_SPREADSHEET_ID")
+    if not spreadsheet_id:
+        return []
+    try:
+        b64 = (os.getenv("GOOGLE_SERVICE_ACCOUNT_B64") or st.secrets.get("GOOGLE_SERVICE_ACCOUNT_B64"))
+        if not b64:
+            part1 = st.secrets.get("GOOGLE_SA_B64_1", "")
+            part2 = st.secrets.get("GOOGLE_SA_B64_2", "")
+            if part1 and part2:
+                b64 = part1 + part2
+        if b64:
+            sa_info = json.loads(base64.b64decode(b64).decode())
+        else:
+            sa_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
+            if not sa_json:
+                return []
+            sa_info = json.loads(sa_json)
+    except Exception:
+        return []
+
+    try:
+        creds  = Credentials.from_service_account_info(sa_info, scopes=SCOPES)
+        client = gspread.authorize(creds)
+        sheet  = client.open_by_key(spreadsheet_id)
+        try:
+            ws = sheet.worksheet(POSTS_SHEET_NAME)
+        except gspread.exceptions.WorksheetNotFound:
+            return []
+        rows = ws.get_all_records(default_blank="")
+    except Exception:
+        return []
+
+    for row in rows:
+        row["bereik"] = _to_float(row.get("bereik"))
+        row["interacties"] = _to_float(row.get("interacties"))
+        row["engagement_rate"] = _to_float(row.get("engagement_rate"))
+
+    return rows
+
+
+@st.cache_data(ttl=300)
+def load_demographics() -> list[dict]:
+    """Leest het tabblad 'Demografie'. Geeft [] terug als het nog niet bestaat."""
+    spreadsheet_id = os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID") or st.secrets.get("GOOGLE_SHEETS_SPREADSHEET_ID")
+    if not spreadsheet_id:
+        return []
+    try:
+        b64 = (os.getenv("GOOGLE_SERVICE_ACCOUNT_B64") or st.secrets.get("GOOGLE_SERVICE_ACCOUNT_B64"))
+        if not b64:
+            part1 = st.secrets.get("GOOGLE_SA_B64_1", "")
+            part2 = st.secrets.get("GOOGLE_SA_B64_2", "")
+            if part1 and part2:
+                b64 = part1 + part2
+        if b64:
+            sa_info = json.loads(base64.b64decode(b64).decode())
+        else:
+            sa_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
+            if not sa_json:
+                return []
+            sa_info = json.loads(sa_json)
+    except Exception:
+        return []
+
+    try:
+        creds  = Credentials.from_service_account_info(sa_info, scopes=SCOPES)
+        client = gspread.authorize(creds)
+        sheet  = client.open_by_key(spreadsheet_id)
+        try:
+            ws = sheet.worksheet(DEMO_SHEET_NAME)
+        except gspread.exceptions.WorksheetNotFound:
+            return []
+        rows = ws.get_all_records(default_blank="")
+    except Exception:
+        return []
+
+    for row in rows:
+        row["aantal"] = _to_float(row.get("aantal")) or 0
+
+    return rows
+
+
+def _latest_demo_per_client(demo: list[dict], klant_id: str) -> dict[str, list[dict]]:
+    """Geeft de meest recente demografie-meting per dimensie voor een klant."""
+    rows = [r for r in demo if r.get("klant_id") == klant_id]
+    if not rows:
+        return {}
+    by_dim = {}
+    for r in rows:
+        by_dim.setdefault(r["dimensie"], []).append(r)
+    out = {}
+    for dim, items in by_dim.items():
+        latest_date = max(r["datum"] for r in items)
+        out[dim] = [r for r in items if r["datum"] == latest_date]
+    return out
+
+
+@st.cache_data(ttl=3600)
+def generate_ai_summary(klant_id: str, bedrijfsnaam: str, latest: dict, previous: dict, top_posts: list[dict]) -> str:
+    """Genereert een korte Nederlandse samenvatting van de recente prestaties via Claude."""
+    api_key = os.getenv("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return ""
+
+    import anthropic
+
+    cijfers = []
+    for label, key in [
+        ("IG volgers", "instagram_volgers"), ("IG bereik (7d)", "instagram_bereik_7d"),
+        ("FB volgers", "facebook_volgers"), ("FB bereik (7d)", "facebook_bereik_7d"),
+        ("FB engagement (7d)", "facebook_engagement_7d"),
+    ]:
+        nu = latest.get(key)
+        if nu is None:
+            continue
+        vorig = previous.get(key) if previous else None
+        if vorig is not None:
+            cijfers.append(f"{label}: {int(nu)} (vorige meting: {int(vorig)})")
+        else:
+            cijfers.append(f"{label}: {int(nu)}")
+
+    posts_lines = []
+    for p in top_posts[:3]:
+        posts_lines.append(f"- ({p['platform']}) \"{p['caption_kort']}\" — engagement rate {p['engagement_rate']:.1%}" if p.get("engagement_rate") else f"- ({p['platform']}) \"{p['caption_kort']}\"")
+
+    prompt = (
+        f"Je bent een social media-analist. Schrijf een korte (max 3 zinnen), "
+        f"vriendelijke Nederlandse samenvatting voor klant '{bedrijfsnaam}' op basis van "
+        f"deze cijfers:\n\n" + "\n".join(cijfers) +
+        ("\n\nBest presterende recente posts:\n" + "\n".join(posts_lines) if posts_lines else "") +
+        "\n\nNoem concrete getallen, leg kort uit wat opvalt, en geef indien mogelijk één "
+        "praktisch inzicht voor toekomstige content. Geen opsomming, gewoon lopende tekst."
+    )
+
+    try:
+        ac = anthropic.Anthropic(api_key=api_key)
+        message = ac.messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=300,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return message.content[0].text.strip()
+    except Exception:
+        return ""
+
+
 # ── Merk & design system ──────────────────────────────────────────────────────
 #
 # "Top Socials" — het content-cockpit van TopMediaGroep.
@@ -2016,6 +2184,125 @@ with tab_statistieken:
                     "📈 De trendgrafiek verschijnt zodra er meerdere metingen zijn opgeslagen "
                     "(de statistieken worden periodiek opnieuw opgehaald)."
                 )
+
+            # ── Posts, engagement, beste posttijden, demografie & AI-samenvatting ──
+            posts_all = load_post_insights()
+            posts = [p for p in posts_all if p.get("klant_id") == klant_id]
+
+            if not posts:
+                st.caption(
+                    "ℹ️ Nog geen post-statistieken opgehaald voor deze klant "
+                    "(`systems/fetch_post_insights.py`)."
+                )
+            else:
+                # ── Gemiddelde engagement rate per platform (#2) ────────────────
+                st.markdown(
+                    '<p style="font-size:13px;font-weight:700;color:var(--ink);'
+                    'margin:24px 0 4px;">Gemiddelde engagement rate</p>',
+                    unsafe_allow_html=True,
+                )
+                eng_cols = st.columns(2)
+                for i, platform in enumerate(["instagram", "facebook"]):
+                    rates = [p["engagement_rate"] for p in posts
+                             if p.get("platform") == platform and p.get("engagement_rate") is not None]
+                    if rates:
+                        avg_rate = sum(rates) / len(rates)
+                        eng_cols[i].metric(
+                            f"{platform.capitalize()} ({len(rates)} posts)",
+                            f"{avg_rate:.1%}",
+                        )
+                    else:
+                        eng_cols[i].metric(f"{platform.capitalize()}", "—")
+
+                # ── Top-presterende posts (#1) ──────────────────────────────────
+                st.markdown(
+                    '<p style="font-size:13px;font-weight:700;color:var(--ink);'
+                    'margin:24px 0 4px;">🏆 Best presterende posts</p>',
+                    unsafe_allow_html=True,
+                )
+                ranked = sorted(
+                    [p for p in posts if p.get("engagement_rate") is not None],
+                    key=lambda p: p["engagement_rate"], reverse=True,
+                )
+                if ranked:
+                    for p in ranked[:5]:
+                        st.markdown(
+                            f"- **{p['engagement_rate']:.1%}** · {p.get('platform', '')} · "
+                            f"{p.get('post_datum', '')} — {p.get('caption_kort', '(geen tekst)')} "
+                            f"[↗︎]({p.get('link', '')})"
+                        )
+                else:
+                    st.caption("Nog geen posts met bereik-data beschikbaar.")
+
+                # ── Beste momenten om te posten (#6) ────────────────────────────
+                st.markdown(
+                    '<p style="font-size:13px;font-weight:700;color:var(--ink);'
+                    'margin:24px 0 4px;">🕐 Beste dagen om te posten</p>',
+                    unsafe_allow_html=True,
+                )
+                from datetime import datetime as _dt
+                day_rates: dict[str, list[float]] = {}
+                for p in posts:
+                    if p.get("engagement_rate") is None or not p.get("post_datum"):
+                        continue
+                    try:
+                        weekday = _dt.strptime(p["post_datum"], "%Y-%m-%d").weekday()
+                    except ValueError:
+                        continue
+                    day_rates.setdefault(DAGEN_NL[weekday], []).append(p["engagement_rate"])
+
+                if len(day_rates) >= 2:
+                    import pandas as pd
+                    avg_per_day = {dag: sum(v) / len(v) for dag, v in day_rates.items()}
+                    df_days = pd.DataFrame(
+                        {"Gem. engagement rate": avg_per_day}
+                    ).reindex(DAGEN_NL).dropna()
+                    st.bar_chart(df_days)
+                    best_dag = max(avg_per_day, key=avg_per_day.get)
+                    st.caption(f"📌 Op basis van de afgelopen posts presteert **{best_dag}** gemiddeld het best.")
+                else:
+                    st.caption("Nog niet genoeg data om beste posttijden te bepalen.")
+
+                # ── Volgers-demografie (#7) ─────────────────────────────────────
+                st.markdown(
+                    '<p style="font-size:13px;font-weight:700;color:var(--ink);'
+                    'margin:24px 0 4px;">👥 Doelgroep (Instagram)</p>',
+                    unsafe_allow_html=True,
+                )
+                demo = load_demographics()
+                demo_per_dim = _latest_demo_per_client(demo, klant_id)
+                if not demo_per_dim:
+                    st.caption(
+                        "Nog geen demografische gegevens beschikbaar (vereist o.a. minimaal "
+                        "~100 Instagram-volgers)."
+                    )
+                else:
+                    import pandas as pd
+                    demo_cols = st.columns(len(demo_per_dim))
+                    for i, (dim, rows) in enumerate(demo_per_dim.items()):
+                        title = "Leeftijd / geslacht" if dim == "leeftijd_geslacht" else "Land"
+                        df_demo = pd.DataFrame(
+                            {r["waarde"]: r["aantal"] for r in rows}.items(),
+                            columns=["categorie", "aantal"],
+                        ).set_index("categorie").sort_values("aantal", ascending=False).head(10)
+                        with demo_cols[i]:
+                            st.caption(title)
+                            st.bar_chart(df_demo)
+
+                # ── AI-weeksamenvatting (#4) ────────────────────────────────────
+                st.markdown(
+                    '<p style="font-size:13px;font-weight:700;color:var(--ink);'
+                    'margin:24px 0 4px;">🤖 AI-samenvatting</p>',
+                    unsafe_allow_html=True,
+                )
+                previous = history[-2] if len(history) > 1 else {}
+                summary = generate_ai_summary(
+                    klant_id, selected_client["bedrijfsnaam"], latest, previous, ranked,
+                )
+                if summary:
+                    st.info(summary)
+                else:
+                    st.caption("AI-samenvatting niet beschikbaar (controleer ANTHROPIC_API_KEY).")
 
     st.caption(f"Laatste update: {_now_ams().strftime('%H:%M:%S')}")
 

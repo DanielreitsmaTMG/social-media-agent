@@ -35,6 +35,7 @@ Alle klantdata staat in één Google Sheet: **"Klantprofielen Social Media"**.
 | `vaste_hashtags` | Hashtags die altijd meegenomen worden |
 | `vermijd` | Onderwerpen, woorden of stijlen die nooit gebruikt mogen worden |
 | `extra_context` | Wekelijks bij te werken: lopende campagnes, acties, seizoen |
+| `prestatie_inzichten` | Automatisch ingevuld door `systems/update_performance_insights.py` op basis van best presterende posts (Meta-koppeling) — niet handmatig wijzigen |
 | `google_doc_folder_id` | Google Drive folder-ID uit de URL van de klantmap |
 
 ---
@@ -45,8 +46,13 @@ Alle klantdata staat in één Google Sheet: **"Klantprofielen Social Media"**.
 |---|---|---|
 | 1 | `systems/read_client_profiles.py` | Laad alle actieve klantprofielen uit Google Sheets |
 | 2 | `systems/scrape_client_sources.py` | Scrape website en social URLs voor tone of voice context |
-| 3 | `systems/generate_weekly_posts.py` | Genereer posts per klant via Claude API |
+| 3 | `systems/generate_weekly_posts.py` | Genereer posts per klant via Claude API (gebruikt o.a. `prestatie_inzichten` als extra context) |
 | 4 | `systems/create_weekly_doc.py` | Maak Google Doc aan per klant in de juiste Drive-folder |
+
+> 💡 Voor klanten met een Meta-koppeling wordt `prestatie_inzichten` periodiek
+> bijgewerkt door `systems/update_performance_insights.py` (zie blueprint
+> *meta_insights_koppeling*). Draai dit idealiter vóór de wekelijkse
+> contentgeneratie zodat de nieuwste inzichten worden meegenomen.
 
 Tussenresultaten worden opgeslagen in `intermediates/` zodat je bij een fout kunt hervatten zonder eerdere stappen te herhalen.
 
