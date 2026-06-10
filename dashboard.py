@@ -335,7 +335,7 @@ st.markdown(f"""
     --surf:  {BRAND['surface']};
     --bg:    {BRAND['canvas']};
     --r-card: 20px;
-    --r-btn:  980px;
+    --r-btn:  10px;
     --r-inp:  12px;
     --shadow: 0 2px 12px rgba(0,0,0,.07), 0 0 0 0.5px rgba(0,0,0,.04);
     --shadow-hover: 0 8px 32px rgba(0,0,0,.12), 0 0 0 0.5px rgba(0,0,0,.05);
@@ -437,7 +437,9 @@ hr {{ border-color: var(--line) !important; margin: 1.5rem 0 !important; }}
 .stTabs [data-baseweb="tab-border"]    {{ display: none; }}
 
 /* ── Knoppen ── */
-.stButton > button, .stDownloadButton > button {{
+.stButton > button, .stDownloadButton > button,
+.stButton button, .stDownloadButton button,
+[data-testid^="stBaseButton"] {{
     border-radius: var(--r-btn) !important;
     font-weight: 600 !important; font-size: 13px !important;
     border: 1px solid var(--line) !important;
@@ -446,17 +448,20 @@ hr {{ border-color: var(--line) !important; margin: 1.5rem 0 !important; }}
     transition: all .18s cubic-bezier(.4,0,.2,1);
     letter-spacing: -.01em;
 }}
-.stButton > button[kind="primary"] {{
+.stButton > button[kind="primary"],
+[data-testid="stBaseButton-primary"] {{
     background: var(--p) !important;
     border-color: var(--p) !important;
     color: #fff !important;
     box-shadow: 0 2px 10px rgba(79,70,229,.35) !important;
 }}
-.stButton > button:hover:not(:disabled) {{
+.stButton > button:hover:not(:disabled),
+[data-testid^="stBaseButton"]:hover:not(:disabled) {{
     box-shadow: var(--shadow) !important;
     transform: translateY(-1px);
 }}
-.stButton > button[kind="primary"]:hover:not(:disabled) {{
+.stButton > button[kind="primary"]:hover:not(:disabled),
+[data-testid="stBaseButton-primary"]:hover:not(:disabled) {{
     background: var(--pd) !important;
     border-color: var(--pd) !important;
 }}
