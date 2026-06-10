@@ -75,11 +75,14 @@ Klanten zonder deze ID's worden overgeslagen bij het ophalen van statistieken.
 
 - **`systems/fetch_post_insights.py`** *(nieuw)* — haalt per klant met
   `instagram_business_account_id` en/of `facebook_page_id` de laatste posts op
-  (standaard 10 per platform, `--limit` instelbaar) met bereik, interacties en
-  berekende `engagement_rate`, en schrijft dit naar tabblad
-  **"Statistieken_Posts"**. Voedt de "Best presterende posts",
-  "Beste dagen om te posten" en de prestatie-inzichten voor de
-  contentgenerator.
+  (standaard 10 per platform, `--limit` instelbaar) met bereik, interacties,
+  berekende `engagement_rate` en `afbeelding_url` (IG: `thumbnail_url` of
+  `media_url`; FB: `full_picture`), en schrijft dit naar tabblad
+  **"Statistieken_Posts"**. Voedt de "Best presterende posts" (incl.
+  afbeeldingvoorbeeld), "Beste dagen om te posten" en de prestatie-inzichten
+  voor de contentgenerator. Het tabblad is een **momentopname**: bij elke run
+  worden bestaande rijen van de verwerkte klanten vervangen i.p.v.
+  geaccumuleerd.
 
 - **`systems/fetch_audience_demographics.py`** *(nieuw)* — haalt per klant met
   `instagram_business_account_id` de volgers-demografie (leeftijd/geslacht en
@@ -100,12 +103,12 @@ Klanten zonder deze ID's worden overgeslagen bij het ophalen van statistieken.
 Tabblad **"📊 Statistieken"** in `dashboard.py`, per klant:
 - Kaarten met volgers (+ groei t.o.v. vorige meting), bereik, weergaven en
   engagement (uit "Statistieken"-tab) + lijngrafiek volgersgroei over tijd.
-- **Gemiddelde engagement rate** per platform (#2), berekend uit
-  "Statistieken_Posts".
+- **Gemiddeld bereik per post** per platform (#2), berekend uit
+  "Statistieken_Posts" (laatste 31 dagen).
 - **🏆 Best presterende posts** (#1): top 5 posts gesorteerd op
-  engagement_rate, met link.
-- **🕐 Beste dagen om te posten** (#6): bar chart van gemiddelde
-  engagement_rate per weekdag, op basis van `post_datum`.
+  engagement_rate, met afbeeldingvoorbeeld, bereik/interacties en link.
+- **🕐 Beste dagen om te posten** (#6): bar chart van gemiddeld bereik
+  (weergaven) per weekdag, op basis van `post_datum`.
 - **👥 Doelgroep** (#7): bar charts leeftijd/geslacht en land uit "Demografie"
   (alleen als data beschikbaar — anders nette melding over volgersdrempel).
 - **🤖 AI-samenvatting** (#4): korte Nederlandse samenvatting (Claude Haiku,

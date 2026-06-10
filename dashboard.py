@@ -952,6 +952,14 @@ div[class*="st-key-statcard-"] [data-testid="stVerticalBlock"] {{
     font-size: 18px; font-weight: 800; color: var(--ink3);
     width: 24px; text-align: center; flex-shrink: 0;
 }}
+.ts-post-thumb {{
+    width: 56px; height: 56px; border-radius: 10px; object-fit: cover;
+    flex-shrink: 0; background: var(--bg);
+}}
+.ts-post-thumb-empty {{
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; color: var(--ink3);
+}}
 .ts-post-body {{ flex: 1; min-width: 0; }}
 .ts-post-meta {{
     font-size: 11px; color: var(--ink2); margin-bottom: 2px;
@@ -2261,23 +2269,23 @@ with tab_statistieken:
                 # Val terug op alle opgehaalde posts als er niets binnen 31 dagen valt
                 posts = posts_31 if posts_31 else all_posts
 
-                # ── Gemiddelde engagement (#2) ──────────────────────────────────
+                # ── Gemiddeld bereik (#2) ────────────────────────────────────────
                 with st.container(key=f"statcard-engagement-{klant_id}"):
-                    st.markdown('<p class="ts-stat-title">📈 Gemiddelde engagement</p>', unsafe_allow_html=True)
+                    st.markdown('<p class="ts-stat-title">📈 Gemiddeld bereik per post</p>', unsafe_allow_html=True)
                     st.markdown(
-                        '<p class="ts-stat-caption">Interacties per 1.000 bereik — '
+                        '<p class="ts-stat-caption">Aantal mensen dat de post zag — '
                         f'laatste 31 dagen ({period_label})</p>',
                         unsafe_allow_html=True,
                     )
                     eng_cols = st.columns(2)
                     for i, platform in enumerate(["instagram", "facebook"]):
-                        rates = [p["engagement_rate"] for p in posts
-                                 if p.get("platform") == platform and p.get("engagement_rate") is not None]
-                        if rates:
-                            avg_rate = sum(rates) / len(rates)
+                        bereiken = [p["bereik"] for p in posts
+                                    if p.get("platform") == platform and p.get("bereik") is not None]
+                        if bereiken:
+                            avg_bereik = sum(bereiken) / len(bereiken)
                             eng_cols[i].metric(
-                                f"{platform.capitalize()} ({len(rates)} posts)",
-                                f"{avg_rate * 1000:.0f}",
+                                f"{platform.capitalize()} ({len(bereiken)} posts)",
+                                _format_stat(avg_bereik),
                             )
                         else:
                             eng_cols[i].metric(f"{platform.capitalize()}", "—")
@@ -2311,9 +2319,15 @@ with tab_statistieken:
                                 f'<a class="ts-post-link" href="{link}" target="_blank" title="Bekijk post">↗︎</a>'
                                 if link else ""
                             )
+                            afbeelding_url = p.get("afbeelding_url", "")
+                            thumb_html = (
+                                f'<img class="ts-post-thumb" src="{afbeelding_url}" alt="">'
+                                if afbeelding_url else '<div class="ts-post-thumb ts-post-thumb-empty">{}</div>'.format(icon)
+                            )
                             st.markdown(
                                 f'<div class="ts-post-card">'
                                 f'<div class="ts-post-rank">#{i}</div>'
+                                f'{thumb_html}'
                                 f'<div class="ts-post-body">'
                                 f'<div class="ts-post-meta">{icon} {p.get("platform", "").capitalize()} · {datum_fmt}</div>'
                                 f'<div class="ts-post-caption">{p.get("caption_kort", "(geen tekst)")}</div>'
@@ -2335,30 +2349,30 @@ with tab_statistieken:
                 with st.container(key=f"statcard-bestdays-{klant_id}"):
                     st.markdown('<p class="ts-stat-title">🕐 Beste dagen om te posten</p>', unsafe_allow_html=True)
                     st.markdown(
-                        '<p class="ts-stat-caption">Gemiddeld aantal interacties per weekdag '
+                        '<p class="ts-stat-caption">Gemiddeld bereik (weergaven) per weekdag '
                         '(o.b.v. de meest recent opgehaalde posts)</p>',
                         unsafe_allow_html=True,
                     )
 
-                    day_interacties: dict[str, list[float]] = {}
+                    day_bereik: dict[str, list[float]] = {}
                     for p in all_posts:
-                        if p.get("interacties") is None or not p.get("post_datum"):
+                        if p.get("bereik") is None or not p.get("post_datum"):
                             continue
                         try:
                             weekday = datetime.strptime(p["post_datum"], "%Y-%m-%d").weekday()
                         except ValueError:
                             continue
-                        day_interacties.setdefault(DAGEN_NL[weekday], []).append(p["interacties"])
+                        day_bereik.setdefault(DAGEN_NL[weekday], []).append(p["bereik"])
 
-                    if day_interacties:
+                    if day_bereik:
                         import pandas as pd
-                        avg_per_day = {dag: sum(v) / len(v) for dag, v in day_interacties.items()}
+                        avg_per_day = {dag: sum(v) / len(v) for dag, v in day_bereik.items()}
                         df_days = pd.DataFrame(
-                            {"Gem. interacties": avg_per_day}
+                            {"Gem. bereik": avg_per_day}
                         ).reindex(DAGEN_NL).dropna()
                         st.bar_chart(df_days, color=BRAND["primary"])
                         best_dag = max(avg_per_day, key=avg_per_day.get)
-                        st.caption(f"📌 Op basis van de afgelopen posts presteert **{best_dag}** gemiddeld het best.")
+                        st.caption(f"📌 Op basis van de afgelopen posts presteert **{best_dag}** gemiddeld het best qua bereik.")
                     else:
                         st.caption("Nog niet genoeg data om beste posttijden te bepalen.")
 

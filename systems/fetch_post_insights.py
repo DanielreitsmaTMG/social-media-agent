@@ -51,6 +51,7 @@ POSTS_HEADERS = [
     "bereik",
     "interacties",
     "engagement_rate",
+    "afbeelding_url",
 ]
 
 
@@ -101,6 +102,8 @@ def _page_access_tokens(token: str) -> dict:
 def _ensure_posts_sheet(spreadsheet):
     try:
         ws = spreadsheet.worksheet(POSTS_SHEET_NAME)
+        if ws.row_values(1) != POSTS_HEADERS:
+            ws.update(values=[POSTS_HEADERS], range_name="A1")
     except gspread.exceptions.WorksheetNotFound:
         ws = spreadsheet.add_worksheet(title=POSTS_SHEET_NAME, rows=2000, cols=len(POSTS_HEADERS))
         ws.append_row(POSTS_HEADERS)
@@ -122,7 +125,7 @@ def _instagram_posts(ig_id: str, token: str, limit: int) -> list[dict]:
         data = _graph_get(
             f"{ig_id}/media",
             {
-                "fields": "id,caption,timestamp,media_type,permalink,like_count,comments_count",
+                "fields": "id,caption,timestamp,media_type,permalink,like_count,comments_count,media_url,thumbnail_url",
                 "limit": limit,
                 "access_token": token,
             },
@@ -157,6 +160,9 @@ def _instagram_posts(ig_id: str, token: str, limit: int) -> list[dict]:
 
         engagement_rate = round(interacties / bereik, 4) if bereik else None
 
+        # Video's hebben geen media_url voor de afbeelding zelf, maar wel een thumbnail
+        afbeelding_url = media.get("thumbnail_url") or media.get("media_url", "")
+
         rows.append({
             "platform": "instagram",
             "post_datum": media.get("timestamp", "")[:10],
@@ -166,6 +172,7 @@ def _instagram_posts(ig_id: str, token: str, limit: int) -> list[dict]:
             "bereik": bereik,
             "interacties": interacties,
             "engagement_rate": engagement_rate,
+            "afbeelding_url": afbeelding_url,
         })
 
     return rows
@@ -179,7 +186,7 @@ def _facebook_posts(page_id: str, page_token: str, limit: int) -> list[dict]:
         data = _graph_get(
             f"{page_id}/posts",
             {
-                "fields": "id,message,created_time,permalink_url,likes.summary(true),comments.summary(true),shares",
+                "fields": "id,message,created_time,permalink_url,likes.summary(true),comments.summary(true),shares,full_picture",
                 "limit": limit,
                 "access_token": page_token,
             },
@@ -219,6 +226,7 @@ def _facebook_posts(page_id: str, page_token: str, limit: int) -> list[dict]:
             "bereik": bereik,
             "interacties": interacties,
             "engagement_rate": engagement_rate,
+            "afbeelding_url": post.get("full_picture", ""),
         })
 
     return rows
@@ -304,11 +312,25 @@ def main():
                 post["bereik"] if post["bereik"] is not None else "",
                 post["interacties"],
                 post["engagement_rate"] if post["engagement_rate"] is not None else "",
+                post.get("afbeelding_url", ""),
             ])
 
         print(f"    {len(posts)} posts opgehaald")
 
     if new_rows:
+        # "Statistieken_Posts" is een momentopname: vervang bestaande rijen van de
+        # verwerkte klanten zodat er geen verouderde/dubbele posts blijven staan.
+        processed_klant_ids = {klant_id for klant_id, _, _, _ in to_process}
+        existing = posts_ws.get_all_values()
+        if len(existing) > 1:
+            keep = [existing[0]] + [
+                r for r in existing[1:]
+                if not (len(r) > 1 and r[1] in processed_klant_ids)
+            ]
+            if len(keep) != len(existing):
+                posts_ws.clear()
+                posts_ws.append_rows(keep, value_input_option="RAW")
+
         posts_ws.append_rows(new_rows, value_input_option="RAW")
         print(f"\n{len(new_rows)} rij(en) toegevoegd aan tabblad '{POSTS_SHEET_NAME}'.")
 
