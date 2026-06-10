@@ -492,20 +492,35 @@ hr {{ border-color: var(--line) !important; margin: 1.5rem 0 !important; }}
 }}
 
 /* ── Klant-tegels ── */
-.ts-tile {{
+/* Container met key="tile-..." wordt de hele kaart (tegel + details samen) */
+div[class*="st-key-tile-"] {{
     background: var(--surf);
     border-radius: var(--r-card);
-    padding: 18px 16px 14px;
     box-shadow: var(--shadow);
+    overflow: hidden;
     transition: box-shadow .2s ease, transform .2s ease;
+}}
+div[class*="st-key-tile-"]:hover {{
+    box-shadow: var(--shadow-hover);
+    transform: translateY(-2px);
+}}
+div[class*="st-key-tile-"] [data-testid="stVerticalBlock"] {{
+    gap: 0 !important;
+}}
+div[class*="st-key-tile-"] [data-testid="stExpander"] {{
+    background: transparent !important;
+    border: none !important;
+    border-top: 1px solid var(--line) !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    margin: 0 !important;
+}}
+.ts-tile {{
+    padding: 18px 16px 14px;
     cursor: default;
     height: 148px;
     box-sizing: border-box;
     display: flex; flex-direction: column; justify-content: space-between;
-}}
-.ts-tile:hover {{
-    box-shadow: var(--shadow-hover);
-    transform: translateY(-2px);
 }}
 .ts-tile-top {{
     display: flex; align-items: flex-start; gap: 10px;
@@ -715,7 +730,7 @@ with tab_klanten:
             row_clients = clients[row_start : row_start + COLS]
             cols = st.columns(COLS, gap="small")
 
-            for col, client in zip(cols, row_clients):
+            for col_idx, (col, client) in enumerate(zip(cols, row_clients)):
                 total     = _total_posts_pw(client)
                 img_url   = get_profile_image(client.get("website_url", ""))
                 followers = _client_follower_counts(client)
@@ -742,7 +757,7 @@ with tab_klanten:
                     'justify-content:center;font-size:16px;">🏢</div>'
                 )
 
-                with col:
+                with col, st.container(key=f"tile-{row_start}-{col_idx}"):
                     st.markdown(f"""
                     <div class="ts-tile">
                       <div class="ts-tile-top">
