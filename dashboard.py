@@ -1308,15 +1308,13 @@ def _render_post_card(selected_tab, row_idx, post, color, client_dict, spreadshe
                          disabled=cur_status == "goedgekeurd"):
                 cur_updates[row_idx] = ("goedgekeurd", "")
                 pending[row_idx]     = ("goedgekeurd", "")
-                cur_status = "goedgekeurd"
-                badge_slot.markdown(_badge_html(cur_status), unsafe_allow_html=True)
+                st.rerun(scope="fragment")
         with col_rej_btn:
             if st.button("❌", key=f"rej_{row_idx}", use_container_width=True,
                          disabled=cur_status == "afgewezen"):
                 cur_updates[row_idx] = ("afgewezen", _eff_note(cur_updates, row_idx, post))
                 pending[row_idx]     = ("afgewezen", _eff_note(cur_updates, row_idx, post))
-                cur_status = "afgewezen"
-                badge_slot.markdown(_badge_html(cur_status), unsafe_allow_html=True)
+                st.rerun(scope="fragment")
 
         if cur_status == "afgewezen":
             typed = st.text_input(
