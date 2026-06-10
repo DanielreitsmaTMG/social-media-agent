@@ -385,6 +385,39 @@ def _stat_delta(history: list[dict], col: str):
     return f"{sign}{int(diff)} t.o.v. vorige meting"
 
 
+def _followers_growth(history: list[dict], col: str, days: int = 7):
+    """Geeft (verschil, percentage) volgersgroei t.o.v. ~`days` dagen geleden.
+
+    Gebruikt de oudste meting binnen de laatste `days` dagen als basislijn.
+    Geeft None terug als er geen meting met deze kolom beschikbaar is.
+    """
+    values = []
+    for r in history:
+        if r.get(col) is None or not r.get("datum"):
+            continue
+        try:
+            d = datetime.strptime(r["datum"], "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        values.append((d, r[col]))
+    if len(values) < 2:
+        return None
+
+    latest_date, latest_val = values[-1]
+    cutoff = latest_date - timedelta(days=days)
+    baseline = values[0]
+    for d, val in values:
+        if d <= cutoff:
+            baseline = (d, val)
+        else:
+            break
+
+    base_val = baseline[1]
+    diff = latest_val - base_val
+    pct = (diff / base_val * 100) if base_val else None
+    return diff, pct
+
+
 # ── Posts-statistieken & demografie (Meta-koppeling, vervolg) ────────────────
 
 POSTS_SHEET_NAME = "Statistieken_Posts"
@@ -2249,6 +2282,40 @@ with tab_statistieken:
                         "📈 De trendgrafiek verschijnt zodra er meerdere metingen zijn opgeslagen "
                         "(de statistieken worden periodiek opnieuw opgehaald)."
                     )
+
+            # ── Volgersgroei (laatste 7 dagen) ──────────────────────────────────
+            with st.container(key=f"statcard-growth-{klant_id}"):
+                st.markdown('<p class="ts-stat-title">📈 Volgersgroei</p>', unsafe_allow_html=True)
+                ig_growth = _followers_growth(history, "instagram_volgers") if heeft_ig else None
+                fb_growth = _followers_growth(history, "facebook_volgers") if heeft_fb else None
+
+                if ig_growth is None and fb_growth is None:
+                    st.markdown(
+                        '<p class="ts-stat-caption">Nog niet genoeg metingen voor een groei-analyse.</p>',
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.markdown(
+                        '<p class="ts-stat-caption">Volgersverschil over de laatste 7 dagen '
+                        '(of sinds de eerste meting)</p>',
+                        unsafe_allow_html=True,
+                    )
+                    growth_items = []
+                    if heeft_ig:
+                        growth_items.append(("Instagram volgers", ig_growth))
+                    if heeft_fb:
+                        growth_items.append(("Facebook volgers", fb_growth))
+
+                    growth_cols = st.columns(len(growth_items))
+                    for col, (label, growth) in zip(growth_cols, growth_items):
+                        if growth is None:
+                            col.metric(label, "—")
+                            continue
+                        diff, pct = growth
+                        sign = "+" if diff > 0 else ""
+                        value_str = f"{sign}{int(diff)}"
+                        delta_str = f"{sign}{pct:.1f}%" if pct is not None else None
+                        col.metric(label, value_str, delta_str)
 
             # ── Posts, engagement, beste posttijden, demografie & AI-samenvatting ──
             posts_all = load_post_insights()
