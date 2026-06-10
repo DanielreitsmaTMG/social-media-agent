@@ -81,8 +81,37 @@ Klanten zonder deze ID's worden overgeslagen bij het ophalen van statistieken.
   - Klanten zonder Meta-koppeling: nette melding "Nog niet gekoppeld".
 
 ## Edge cases / geleerde lessen
-- (in te vullen zodra we tegen rate limits / permissies aanlopen)
 - Facebook Graph API rate limit: standaard ~200 calls/uur per gebruiker per
   app — bij 60+ klanten dagelijks ophalen past dit ruim.
 - IG Insights vereisen een **Instagram Business- of Creator-account** gekoppeld
   aan een Facebook-pagina — persoonlijke accounts werken niet.
+- **IG-insights (Graph API v21+)**: `reach` en `views` (vervanger van het
+  uitgefaseerde `impressions`) en `profile_views` moeten worden opgevraagd
+  met `metric_type=total_value` — anders error #100. Het antwoord staat dan
+  in `data[].total_value.value` i.p.v. `data[].values[].value`.
+- **FB Page-insights vereisen een Page Access Token**, niet het system-user
+  token zelf (anders error #190 "This method must be called with a Page
+  Access Token"). Page tokens worden opgehaald via `GET /me/accounts` (geen
+  `fields`-parameter nodig — `access_token` zit standaard in de respons).
+- `page_impressions` is uitgefaseerd; gebruik `page_impressions_unique`
+  (bereik) en `page_views_total` (paginaweergaven) i.p.v. impressies.
+- **gspread A1-bug**: `rowcol_to_a1(row, col)[:-1] + str(row)` gaat fout
+  zodra `row >= 10` (snijdt het laatste cijfer van het rijnummer i.p.v. de
+  kolomletter af). Gebruik gewoon `rowcol_to_a1(row, col)` direct als range.
+
+## Status koppeling per klant (10-6-2026)
+Eerste batch van 11 klanten succesvol gekoppeld en getest (volgers, bereik,
+profielweergaven/-bezoeken, engagement komen binnen):
+
+DR-003 (Artena), DR-005 (Cycle for Hope), DR-006 (SwitchUp), DR-007 (Oishi
+Fusion, alleen FB), DR-008 (Yoshimi), DR-010 t/m DR-015 (Mijn baan in de
+Techniek/GWW/energietransitie, Mijn werk in het Groen, 55+ Vacatures, Werken
+in de Lopikerwaard — laatste 3 alleen FB, geen IG gekoppeld aan de pagina).
+
+Overige klanten (DR-001, DR-002, DR-004, DR-009, MK-001 t/m MK-008) staan nog
+niet in het Business Manager-portfolio van TopMediaGroep — moeten later nog
+worden toegevoegd door de klant/pagina-eigenaar (zie stap 5 hierboven).
+
+`systems/fetch_meta_insights.py` draait nu handmatig; kan later als dagelijkse
+cronjob worden ingepland (bijv. via `systems/update_follower_counts.py`'s
+schema) zodat de "Statistieken"-tab een trendgeschiedenis opbouwt.
