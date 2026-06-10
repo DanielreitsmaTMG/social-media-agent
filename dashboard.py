@@ -923,6 +923,56 @@ iframe[title="components.html"], iframe[data-testid="stIFrame"] {{
     height: 4px; border-radius: 99px;
     background: var(--ok); transition: width .4s ease;
 }}
+
+/* ── Statistieken-tab: kaarten ── */
+div[class*="st-key-statcard-"] {{
+    background: var(--surf);
+    border-radius: var(--r-card);
+    padding: 22px 24px;
+    box-shadow: var(--shadow);
+    margin-bottom: 18px;
+}}
+div[class*="st-key-statcard-"] [data-testid="stVerticalBlock"] {{
+    gap: 0.4rem !important;
+}}
+.ts-stat-title {{
+    font-size: 13px; font-weight: 700; color: var(--ink);
+    margin: 0 0 2px; letter-spacing: -0.01em;
+}}
+.ts-stat-caption {{
+    font-size: 12px; color: var(--ink2); margin: -2px 0 10px;
+}}
+.ts-post-card {{
+    display: flex; align-items: center; gap: 14px;
+    padding: 12px 14px; border-radius: 12px;
+    background: var(--bg); border-left: 3px solid var(--p);
+    margin-bottom: 8px;
+}}
+.ts-post-rank {{
+    font-size: 18px; font-weight: 800; color: var(--ink3);
+    width: 24px; text-align: center; flex-shrink: 0;
+}}
+.ts-post-body {{ flex: 1; min-width: 0; }}
+.ts-post-meta {{
+    font-size: 11px; color: var(--ink2); margin-bottom: 2px;
+    text-transform: uppercase; letter-spacing: .04em; font-weight: 600;
+}}
+.ts-post-caption {{
+    font-size: 13px; color: var(--ink); line-height: 1.4;
+    display: -webkit-box; -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical; overflow: hidden;
+}}
+.ts-post-stats {{
+    display: flex; gap: 18px; flex-shrink: 0; text-align: right;
+}}
+.ts-post-stat {{ min-width: 56px; }}
+.ts-post-stat-value {{ font-size: 15px; font-weight: 700; color: var(--ink); }}
+.ts-post-stat-label {{
+    font-size: 10px; color: var(--ink2); text-transform: uppercase; letter-spacing: .06em;
+}}
+.ts-post-link {{
+    font-size: 16px; flex-shrink: 0; text-decoration: none;
+}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -2126,183 +2176,226 @@ with tab_statistieken:
                 key=lambda r: r.get("datum", ""),
             )
 
-            st.markdown(f"##### 📅 Laatste meting: {latest.get('datum', '—')}")
-
-            heeft_ig = latest.get("instagram_volgers") is not None
-            heeft_fb = latest.get("facebook_volgers") is not None
-
-            if heeft_ig:
+            with st.container(key=f"statcard-overview-{klant_id}"):
                 st.markdown(
-                    f'<p style="font-size:13px;font-weight:700;color:{PLATFORM_COLORS["instagram"]};'
-                    f'margin:8px 0 4px;">Instagram</p>',
+                    f'<p class="ts-stat-title">📅 Laatste meting: {latest.get("datum", "—")}</p>',
                     unsafe_allow_html=True,
                 )
-                c1, c2, c3, c4 = st.columns(4)
-                c1.metric("Volgers", _format_stat(latest.get("instagram_volgers")),
-                          _stat_delta(history, "instagram_volgers"))
-                c2.metric("Bereik (7d)", _format_stat(latest.get("instagram_bereik_7d")),
-                          _stat_delta(history, "instagram_bereik_7d"))
-                c3.metric("Weergaven (7d)", _format_stat(latest.get("instagram_impressies_7d")),
-                          _stat_delta(history, "instagram_impressies_7d"))
-                c4.metric("Profielbezoeken (7d)", _format_stat(latest.get("instagram_profielbezoeken_7d")),
-                          _stat_delta(history, "instagram_profielbezoeken_7d"))
 
-            if heeft_fb:
-                st.markdown(
-                    f'<p style="font-size:13px;font-weight:700;color:{PLATFORM_COLORS["facebook"]};'
-                    f'margin:20px 0 4px;">Facebook</p>',
-                    unsafe_allow_html=True,
-                )
-                c1, c2, c3, c4 = st.columns(4)
-                c1.metric("Volgers", _format_stat(latest.get("facebook_volgers")),
-                          _stat_delta(history, "facebook_volgers"))
-                c2.metric("Bereik (7d)", _format_stat(latest.get("facebook_bereik_7d")),
-                          _stat_delta(history, "facebook_bereik_7d"))
-                c3.metric("Paginaweergaven (7d)", _format_stat(latest.get("facebook_impressies_7d")),
-                          _stat_delta(history, "facebook_impressies_7d"))
-                c4.metric("Engagement (7d)", _format_stat(latest.get("facebook_engagement_7d")),
-                          _stat_delta(history, "facebook_engagement_7d"))
+                heeft_ig = latest.get("instagram_volgers") is not None
+                heeft_fb = latest.get("facebook_volgers") is not None
 
-            # ── Trendgrafiek (zodra er meerdere metingen zijn) ──────────────────
-            if len(history) > 1:
-                st.markdown(
-                    '<p style="font-size:13px;font-weight:700;color:var(--ink);'
-                    'margin:24px 0 4px;">Volgersgroei over tijd</p>',
-                    unsafe_allow_html=True,
-                )
-                chart_cols = {"datum": [r["datum"] for r in history]}
                 if heeft_ig:
-                    chart_cols["Instagram volgers"] = [r.get("instagram_volgers") for r in history]
+                    st.markdown(
+                        f'<p style="font-size:13px;font-weight:700;color:{PLATFORM_COLORS["instagram"]};'
+                        f'margin:14px 0 4px;">Instagram</p>',
+                        unsafe_allow_html=True,
+                    )
+                    c1, c2, c3, c4 = st.columns(4)
+                    c1.metric("Volgers", _format_stat(latest.get("instagram_volgers")),
+                              _stat_delta(history, "instagram_volgers"))
+                    c2.metric("Bereik (7d)", _format_stat(latest.get("instagram_bereik_7d")),
+                              _stat_delta(history, "instagram_bereik_7d"))
+                    c3.metric("Weergaven (7d)", _format_stat(latest.get("instagram_impressies_7d")),
+                              _stat_delta(history, "instagram_impressies_7d"))
+                    c4.metric("Profielbezoeken (7d)", _format_stat(latest.get("instagram_profielbezoeken_7d")),
+                              _stat_delta(history, "instagram_profielbezoeken_7d"))
+
                 if heeft_fb:
-                    chart_cols["Facebook volgers"] = [r.get("facebook_volgers") for r in history]
-                if len(chart_cols) > 1:
-                    import pandas as pd
-                    df = pd.DataFrame(chart_cols).set_index("datum")
-                    st.line_chart(df)
-            else:
-                st.caption(
-                    "📈 De trendgrafiek verschijnt zodra er meerdere metingen zijn opgeslagen "
-                    "(de statistieken worden periodiek opnieuw opgehaald)."
-                )
+                    st.markdown(
+                        f'<p style="font-size:13px;font-weight:700;color:{PLATFORM_COLORS["facebook"]};'
+                        f'margin:18px 0 4px;">Facebook</p>',
+                        unsafe_allow_html=True,
+                    )
+                    c1, c2, c3, c4 = st.columns(4)
+                    c1.metric("Volgers", _format_stat(latest.get("facebook_volgers")),
+                              _stat_delta(history, "facebook_volgers"))
+                    c2.metric("Bereik (7d)", _format_stat(latest.get("facebook_bereik_7d")),
+                              _stat_delta(history, "facebook_bereik_7d"))
+                    c3.metric("Paginaweergaven (7d)", _format_stat(latest.get("facebook_impressies_7d")),
+                              _stat_delta(history, "facebook_impressies_7d"))
+                    c4.metric("Engagement (7d)", _format_stat(latest.get("facebook_engagement_7d")),
+                              _stat_delta(history, "facebook_engagement_7d"))
+
+                # ── Trendgrafiek (zodra er meerdere metingen zijn) ──────────────
+                if len(history) > 1:
+                    st.markdown(
+                        '<p class="ts-stat-title" style="margin-top:18px;">Volgersgroei over tijd</p>',
+                        unsafe_allow_html=True,
+                    )
+                    chart_cols = {"datum": [r["datum"] for r in history]}
+                    if heeft_ig:
+                        chart_cols["Instagram volgers"] = [r.get("instagram_volgers") for r in history]
+                    if heeft_fb:
+                        chart_cols["Facebook volgers"] = [r.get("facebook_volgers") for r in history]
+                    if len(chart_cols) > 1:
+                        import pandas as pd
+                        df = pd.DataFrame(chart_cols).set_index("datum")
+                        st.line_chart(df)
+                else:
+                    st.caption(
+                        "📈 De trendgrafiek verschijnt zodra er meerdere metingen zijn opgeslagen "
+                        "(de statistieken worden periodiek opnieuw opgehaald)."
+                    )
 
             # ── Posts, engagement, beste posttijden, demografie & AI-samenvatting ──
             posts_all = load_post_insights()
-            posts = [p for p in posts_all if p.get("klant_id") == klant_id]
+            all_posts = [p for p in posts_all if p.get("klant_id") == klant_id]
 
-            if not posts:
-                st.caption(
-                    "ℹ️ Nog geen post-statistieken opgehaald voor deze klant "
-                    "(`systems/fetch_post_insights.py`)."
-                )
+            if not all_posts:
+                with st.container(key=f"statcard-noposts-{klant_id}"):
+                    st.markdown('<p class="ts-stat-title">📭 Geen post-statistieken</p>', unsafe_allow_html=True)
+                    st.caption(
+                        "Nog geen post-statistieken opgehaald voor deze klant "
+                        "(`systems/fetch_post_insights.py`)."
+                    )
             else:
-                # ── Gemiddelde engagement rate per platform (#2) ────────────────
-                st.markdown(
-                    '<p style="font-size:13px;font-weight:700;color:var(--ink);'
-                    'margin:24px 0 4px;">Gemiddelde engagement rate</p>',
-                    unsafe_allow_html=True,
-                )
-                eng_cols = st.columns(2)
-                for i, platform in enumerate(["instagram", "facebook"]):
-                    rates = [p["engagement_rate"] for p in posts
-                             if p.get("platform") == platform and p.get("engagement_rate") is not None]
-                    if rates:
-                        avg_rate = sum(rates) / len(rates)
-                        eng_cols[i].metric(
-                            f"{platform.capitalize()} ({len(rates)} posts)",
-                            f"{avg_rate:.1%}",
-                        )
-                    else:
-                        eng_cols[i].metric(f"{platform.capitalize()}", "—")
+                today_d = date.today()
+                cutoff_d = today_d - timedelta(days=31)
+                period_label = f"{cutoff_d.strftime('%d-%m-%Y')} t/m {today_d.strftime('%d-%m-%Y')}"
+
+                posts_31 = [
+                    p for p in all_posts
+                    if p.get("post_datum") and p["post_datum"] >= cutoff_d.isoformat()
+                ]
+                # Val terug op alle opgehaalde posts als er niets binnen 31 dagen valt
+                posts = posts_31 if posts_31 else all_posts
+
+                # ── Gemiddelde engagement (#2) ──────────────────────────────────
+                with st.container(key=f"statcard-engagement-{klant_id}"):
+                    st.markdown('<p class="ts-stat-title">📈 Gemiddelde engagement</p>', unsafe_allow_html=True)
+                    st.markdown(
+                        '<p class="ts-stat-caption">Interacties per 1.000 bereik — '
+                        f'laatste 31 dagen ({period_label})</p>',
+                        unsafe_allow_html=True,
+                    )
+                    eng_cols = st.columns(2)
+                    for i, platform in enumerate(["instagram", "facebook"]):
+                        rates = [p["engagement_rate"] for p in posts
+                                 if p.get("platform") == platform and p.get("engagement_rate") is not None]
+                        if rates:
+                            avg_rate = sum(rates) / len(rates)
+                            eng_cols[i].metric(
+                                f"{platform.capitalize()} ({len(rates)} posts)",
+                                f"{avg_rate * 1000:.0f}",
+                            )
+                        else:
+                            eng_cols[i].metric(f"{platform.capitalize()}", "—")
 
                 # ── Top-presterende posts (#1) ──────────────────────────────────
-                st.markdown(
-                    '<p style="font-size:13px;font-weight:700;color:var(--ink);'
-                    'margin:24px 0 4px;">🏆 Best presterende posts</p>',
-                    unsafe_allow_html=True,
-                )
-                ranked = sorted(
-                    [p for p in posts if p.get("engagement_rate") is not None],
-                    key=lambda p: p["engagement_rate"], reverse=True,
-                )
-                if ranked:
-                    for p in ranked[:5]:
-                        st.markdown(
-                            f"- **{p['engagement_rate']:.1%}** · {p.get('platform', '')} · "
-                            f"{p.get('post_datum', '')} — {p.get('caption_kort', '(geen tekst)')} "
-                            f"[↗︎]({p.get('link', '')})"
-                        )
-                else:
-                    st.caption("Nog geen posts met bereik-data beschikbaar.")
+                with st.container(key=f"statcard-topposts-{klant_id}"):
+                    st.markdown('<p class="ts-stat-title">🏆 Best presterende posts</p>', unsafe_allow_html=True)
+                    fallback_note = "" if posts_31 else " — geen posts in de laatste 31 dagen, toont recentste posts"
+                    st.markdown(
+                        f'<p class="ts-stat-caption">Periode: laatste 31 dagen ({period_label}){fallback_note}</p>',
+                        unsafe_allow_html=True,
+                    )
+
+                    ranked = sorted(
+                        [p for p in posts if p.get("engagement_rate") is not None],
+                        key=lambda p: p["engagement_rate"], reverse=True,
+                    )
+                    if ranked:
+                        platform_icons = {"instagram": "📷", "facebook": "📘"}
+                        for i, p in enumerate(ranked[:5], start=1):
+                            icon = platform_icons.get(p.get("platform", ""), "📱")
+                            datum_fmt = p.get("post_datum", "")
+                            try:
+                                datum_fmt = datetime.strptime(p["post_datum"], "%Y-%m-%d").strftime("%d-%m-%Y")
+                            except (ValueError, KeyError):
+                                pass
+                            bereik = p.get("bereik")
+                            interacties = p.get("interacties")
+                            link = p.get("link", "")
+                            link_html = (
+                                f'<a class="ts-post-link" href="{link}" target="_blank" title="Bekijk post">↗︎</a>'
+                                if link else ""
+                            )
+                            st.markdown(
+                                f'<div class="ts-post-card">'
+                                f'<div class="ts-post-rank">#{i}</div>'
+                                f'<div class="ts-post-body">'
+                                f'<div class="ts-post-meta">{icon} {p.get("platform", "").capitalize()} · {datum_fmt}</div>'
+                                f'<div class="ts-post-caption">{p.get("caption_kort", "(geen tekst)")}</div>'
+                                f'</div>'
+                                f'<div class="ts-post-stats">'
+                                f'<div class="ts-post-stat"><div class="ts-post-stat-value">{_format_stat(bereik) if bereik is not None else "—"}</div>'
+                                f'<div class="ts-post-stat-label">Bereik</div></div>'
+                                f'<div class="ts-post-stat"><div class="ts-post-stat-value">{_format_stat(interacties) if interacties is not None else "—"}</div>'
+                                f'<div class="ts-post-stat-label">Interacties</div></div>'
+                                f'</div>'
+                                f'{link_html}'
+                                f'</div>',
+                                unsafe_allow_html=True,
+                            )
+                    else:
+                        st.caption("Nog geen posts met bereik-data beschikbaar.")
 
                 # ── Beste momenten om te posten (#6) ────────────────────────────
-                st.markdown(
-                    '<p style="font-size:13px;font-weight:700;color:var(--ink);'
-                    'margin:24px 0 4px;">🕐 Beste dagen om te posten</p>',
-                    unsafe_allow_html=True,
-                )
-                from datetime import datetime as _dt
-                day_rates: dict[str, list[float]] = {}
-                for p in posts:
-                    if p.get("engagement_rate") is None or not p.get("post_datum"):
-                        continue
-                    try:
-                        weekday = _dt.strptime(p["post_datum"], "%Y-%m-%d").weekday()
-                    except ValueError:
-                        continue
-                    day_rates.setdefault(DAGEN_NL[weekday], []).append(p["engagement_rate"])
+                with st.container(key=f"statcard-bestdays-{klant_id}"):
+                    st.markdown('<p class="ts-stat-title">🕐 Beste dagen om te posten</p>', unsafe_allow_html=True)
+                    st.markdown(
+                        '<p class="ts-stat-caption">Gemiddeld aantal interacties per weekdag '
+                        '(o.b.v. de meest recent opgehaalde posts)</p>',
+                        unsafe_allow_html=True,
+                    )
 
-                if len(day_rates) >= 2:
-                    import pandas as pd
-                    avg_per_day = {dag: sum(v) / len(v) for dag, v in day_rates.items()}
-                    df_days = pd.DataFrame(
-                        {"Gem. engagement rate": avg_per_day}
-                    ).reindex(DAGEN_NL).dropna()
-                    st.bar_chart(df_days)
-                    best_dag = max(avg_per_day, key=avg_per_day.get)
-                    st.caption(f"📌 Op basis van de afgelopen posts presteert **{best_dag}** gemiddeld het best.")
-                else:
-                    st.caption("Nog niet genoeg data om beste posttijden te bepalen.")
+                    day_interacties: dict[str, list[float]] = {}
+                    for p in all_posts:
+                        if p.get("interacties") is None or not p.get("post_datum"):
+                            continue
+                        try:
+                            weekday = datetime.strptime(p["post_datum"], "%Y-%m-%d").weekday()
+                        except ValueError:
+                            continue
+                        day_interacties.setdefault(DAGEN_NL[weekday], []).append(p["interacties"])
+
+                    if day_interacties:
+                        import pandas as pd
+                        avg_per_day = {dag: sum(v) / len(v) for dag, v in day_interacties.items()}
+                        df_days = pd.DataFrame(
+                            {"Gem. interacties": avg_per_day}
+                        ).reindex(DAGEN_NL).dropna()
+                        st.bar_chart(df_days, color=BRAND["primary"])
+                        best_dag = max(avg_per_day, key=avg_per_day.get)
+                        st.caption(f"📌 Op basis van de afgelopen posts presteert **{best_dag}** gemiddeld het best.")
+                    else:
+                        st.caption("Nog niet genoeg data om beste posttijden te bepalen.")
 
                 # ── Volgers-demografie (#7) ─────────────────────────────────────
-                st.markdown(
-                    '<p style="font-size:13px;font-weight:700;color:var(--ink);'
-                    'margin:24px 0 4px;">👥 Doelgroep (Instagram)</p>',
-                    unsafe_allow_html=True,
-                )
-                demo = load_demographics()
-                demo_per_dim = _latest_demo_per_client(demo, klant_id)
-                if not demo_per_dim:
-                    st.caption(
-                        "Nog geen demografische gegevens beschikbaar (vereist o.a. minimaal "
-                        "~100 Instagram-volgers)."
-                    )
-                else:
-                    import pandas as pd
-                    demo_cols = st.columns(len(demo_per_dim))
-                    for i, (dim, rows) in enumerate(demo_per_dim.items()):
-                        title = "Leeftijd / geslacht" if dim == "leeftijd_geslacht" else "Land"
-                        df_demo = pd.DataFrame(
-                            {r["waarde"]: r["aantal"] for r in rows}.items(),
-                            columns=["categorie", "aantal"],
-                        ).set_index("categorie").sort_values("aantal", ascending=False).head(10)
-                        with demo_cols[i]:
-                            st.caption(title)
-                            st.bar_chart(df_demo)
+                with st.container(key=f"statcard-demo-{klant_id}"):
+                    st.markdown('<p class="ts-stat-title">👥 Doelgroep (Instagram)</p>', unsafe_allow_html=True)
+                    demo = load_demographics()
+                    demo_per_dim = _latest_demo_per_client(demo, klant_id)
+                    if not demo_per_dim:
+                        st.caption(
+                            "Nog geen demografische gegevens beschikbaar (vereist o.a. minimaal "
+                            "~100 Instagram-volgers)."
+                        )
+                    else:
+                        import pandas as pd
+                        demo_cols = st.columns(len(demo_per_dim))
+                        for i, (dim, rows) in enumerate(demo_per_dim.items()):
+                            title = "Leeftijd / geslacht" if dim == "leeftijd_geslacht" else "Land"
+                            df_demo = pd.DataFrame(
+                                {r["waarde"]: r["aantal"] for r in rows}.items(),
+                                columns=["categorie", "aantal"],
+                            ).set_index("categorie").sort_values("aantal", ascending=False).head(10)
+                            with demo_cols[i]:
+                                st.caption(title)
+                                st.bar_chart(df_demo, color=BRAND["primary"])
 
                 # ── AI-weeksamenvatting (#4) ────────────────────────────────────
-                st.markdown(
-                    '<p style="font-size:13px;font-weight:700;color:var(--ink);'
-                    'margin:24px 0 4px;">🤖 AI-samenvatting</p>',
-                    unsafe_allow_html=True,
-                )
-                previous = history[-2] if len(history) > 1 else {}
-                summary = generate_ai_summary(
-                    klant_id, selected_client["bedrijfsnaam"], latest, previous, ranked,
-                )
-                if summary:
-                    st.info(summary)
-                else:
-                    st.caption("AI-samenvatting niet beschikbaar (controleer ANTHROPIC_API_KEY).")
+                with st.container(key=f"statcard-aisummary-{klant_id}"):
+                    st.markdown('<p class="ts-stat-title">🤖 AI-samenvatting</p>', unsafe_allow_html=True)
+                    previous = history[-2] if len(history) > 1 else {}
+                    summary = generate_ai_summary(
+                        klant_id, selected_client["bedrijfsnaam"], latest, previous, ranked,
+                    )
+                    if summary:
+                        st.info(summary)
+                    else:
+                        st.caption("AI-samenvatting niet beschikbaar (controleer ANTHROPIC_API_KEY).")
 
     st.caption(f"Laatste update: {_now_ams().strftime('%H:%M:%S')}")
 
