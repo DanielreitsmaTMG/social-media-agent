@@ -532,18 +532,14 @@ hr {{ border-color: var(--line) !important; margin: 1.5rem 0 !important; }}
 }}
 
 /* ── Login-form: verberg Streamlit's eigen form-wrapper ── */
-[data-testid="stForm"],
-[data-testid="stForm"] > div,
-[data-testid="stForm"] > div > div,
-[data-testid="stVerticalBlockBorderWrapper"],
-[data-testid="stVerticalBlockBorderWrapper"] > div,
-div[class*="stForm"],
-section[data-testid="stForm"] {{
-    background: transparent !important;
+div[data-testid="stForm"] {{
+    background: var(--surf) !important;
     border: none !important;
-    padding: 0 !important;
-    box-shadow: none !important;
-    margin: 0 !important;
+    border-radius: 22px !important;
+    padding: 32px 28px 28px !important;
+    box-shadow: 0 4px 30px rgba(0,0,0,.09), 0 0 0 0.5px rgba(0,0,0,.04) !important;
+    max-width: 380px;
+    margin: 0 auto !important;
 }}
 
 /* ── iframe (Mail studio btn) ── */
@@ -593,20 +589,16 @@ else:
             '<div style="font-size:13px;color:#86868B;margin-top:5px;font-weight:400;">'
             'Content &amp; goedkeuring platform</div>'
             '</div>'
-            '<div style="background:#fff;border-radius:22px;'
-            'padding:32px 28px 28px;box-shadow:0 4px 30px rgba(0,0,0,.09),'
-            '0 0 0 0.5px rgba(0,0,0,.04);">',
+            '</div>',
             unsafe_allow_html=True,
         )
 
-        with st.form("login_form", clear_on_submit=False, border=False):
+        with st.form("login_form", clear_on_submit=False, border=True):
             st.markdown('<p style="font-weight:700;font-size:17px;margin:0 0 16px;">Inloggen</p>',
                         unsafe_allow_html=True)
             username_input = st.text_input("E-mailadres", placeholder="naam@topmediagroep.nl")
             password_input = st.text_input("Wachtwoord", type="password")
             submitted = st.form_submit_button("Inloggen", use_container_width=True, type="primary")
-
-        st.markdown("</div></div>", unsafe_allow_html=True)
 
         if submitted:
             user_key = username_input.strip().lower()
