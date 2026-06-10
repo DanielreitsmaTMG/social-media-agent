@@ -296,6 +296,95 @@ def _total_posts_pw(client: dict) -> int:
     return sum(client.get(f"{p}_posts_pw", 0) for p in ("instagram", "linkedin", "facebook"))
 
 
+STATS_SHEET_NAME = "Statistieken"
+
+STATS_NUMERIC_COLUMNS = [
+    "instagram_volgers", "instagram_bereik_7d", "instagram_impressies_7d", "instagram_profielbezoeken_7d",
+    "facebook_volgers", "facebook_bereik_7d", "facebook_impressies_7d", "facebook_engagement_7d",
+]
+
+
+@st.cache_data(ttl=300)  # Cache 5 minuten
+def load_statistics() -> list[dict]:
+    """Leest het tabblad 'Statistieken' (Meta-koppeling). Geeft [] terug als het
+    tabblad nog niet bestaat (bijv. nog geen klanten gekoppeld)."""
+    spreadsheet_id = os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID") or st.secrets.get("GOOGLE_SHEETS_SPREADSHEET_ID")
+    if not spreadsheet_id:
+        return []
+
+    try:
+        b64 = (os.getenv("GOOGLE_SERVICE_ACCOUNT_B64")
+               or st.secrets.get("GOOGLE_SERVICE_ACCOUNT_B64"))
+        if not b64:
+            part1 = st.secrets.get("GOOGLE_SA_B64_1", "")
+            part2 = st.secrets.get("GOOGLE_SA_B64_2", "")
+            if part1 and part2:
+                b64 = part1 + part2
+        if b64:
+            sa_info = json.loads(base64.b64decode(b64).decode())
+        else:
+            sa_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
+            if not sa_json:
+                return []
+            sa_info = json.loads(sa_json)
+    except Exception:
+        return []
+
+    try:
+        creds  = Credentials.from_service_account_info(sa_info, scopes=SCOPES)
+        client = gspread.authorize(creds)
+        sheet  = client.open_by_key(spreadsheet_id)
+        try:
+            ws = sheet.worksheet(STATS_SHEET_NAME)
+        except gspread.exceptions.WorksheetNotFound:
+            return []
+        rows = ws.get_all_records(default_blank="")
+    except Exception:
+        return []
+
+    for row in rows:
+        for col in STATS_NUMERIC_COLUMNS:
+            try:
+                row[col] = float(row[col]) if row.get(col, "") != "" else None
+            except (ValueError, TypeError):
+                row[col] = None
+
+    return rows
+
+
+def _latest_stats_per_client(stats: list[dict]) -> dict:
+    """Geeft per klant_id de meest recente meting terug."""
+    latest = {}
+    for row in stats:
+        klant_id = row.get("klant_id", "")
+        if not klant_id:
+            continue
+        if klant_id not in latest or row.get("datum", "") >= latest[klant_id].get("datum", ""):
+            latest[klant_id] = row
+    return latest
+
+
+def _format_stat(value) -> str:
+    if value is None:
+        return "—"
+    value = int(value)
+    if value >= 1000:
+        return f"{value / 1000:.1f}k".replace(".0k", "k")
+    return str(value)
+
+
+def _stat_delta(history: list[dict], col: str):
+    """Verschil t.o.v. de meting daarvoor, of None als er geen vorige meting is."""
+    values = [r[col] for r in history if r.get(col) is not None]
+    if len(values) < 2:
+        return None
+    diff = values[-1] - values[-2]
+    if diff == 0:
+        return None
+    sign = "+" if diff > 0 else ""
+    return f"{sign}{int(diff)} t.o.v. vorige meting"
+
+
 # ── Merk & design system ──────────────────────────────────────────────────────
 #
 # "Top Socials" — het content-cockpit van TopMediaGroep.
@@ -815,9 +904,13 @@ with col3:
 st.divider()
 
 if _logged_in_role == "admin":
-    tab_klanten, tab_goedkeuring, tab_team = st.tabs(["📋 Klanten", "✅ Goedkeuring", "👥 Team"])
+    tab_klanten, tab_goedkeuring, tab_statistieken, tab_team = st.tabs(
+        ["📋 Klanten", "✅ Goedkeuring", "📊 Statistieken", "👥 Team"]
+    )
 else:
-    tab_klanten, tab_goedkeuring = st.tabs(["📋 Klanten", "✅ Goedkeuring"])
+    tab_klanten, tab_goedkeuring, tab_statistieken = st.tabs(
+        ["📋 Klanten", "✅ Goedkeuring", "📊 Statistieken"]
+    )
     tab_team = None
 
 with tab_klanten:
@@ -1819,6 +1912,112 @@ with tab_goedkeuring:
 
             client_dict = load_client_dict(spreadsheet_id, sa_json)
             render_approval_interface(posts, client_dict, spreadsheet_id, selected_tab, sa_json)
+
+
+# ── Statistieken tab ──────────────────────────────────────────────────────────
+
+with tab_statistieken:
+    st.subheader("Realtime statistieken")
+    st.caption(
+        "Volgers, bereik, weergaven en engagement — opgehaald via de Meta Graph API "
+        "(Instagram & Facebook). Klanten zonder koppeling tonen nog geen cijfers."
+    )
+
+    if not clients:
+        st.warning("Geen klanten gevonden.")
+    else:
+        stats_history = load_statistics()
+        latest_stats  = _latest_stats_per_client(stats_history)
+
+        # Klanten met koppeling eerst, daarna de rest
+        gekoppeld   = [c for c in clients if c.get("klant_id") in latest_stats]
+        ongekoppeld = [c for c in clients if c.get("klant_id") not in latest_stats]
+        sorted_clients = gekoppeld + ongekoppeld
+
+        options = {c["bedrijfsnaam"]: c for c in sorted_clients}
+        labels = [
+            f"{naam} {'' if c.get('klant_id') in latest_stats else '— nog niet gekoppeld'}".strip()
+            for naam, c in options.items()
+        ]
+        label_to_client = dict(zip(labels, options.values()))
+
+        selected_label = st.selectbox("Selecteer een klant", labels)
+        selected_client = label_to_client[selected_label]
+        klant_id = selected_client.get("klant_id", "")
+
+        if klant_id not in latest_stats:
+            st.info(
+                f"📭 **{selected_client['bedrijfsnaam']}** is nog niet gekoppeld aan het "
+                "Meta Business Manager-portfolio. Statistieken verschijnen hier zodra de "
+                "koppeling is gemaakt (zie blueprint *meta_insights_koppeling*)."
+            )
+        else:
+            latest = latest_stats[klant_id]
+            history = sorted(
+                [r for r in stats_history if r.get("klant_id") == klant_id],
+                key=lambda r: r.get("datum", ""),
+            )
+
+            st.markdown(f"##### 📅 Laatste meting: {latest.get('datum', '—')}")
+
+            heeft_ig = latest.get("instagram_volgers") is not None
+            heeft_fb = latest.get("facebook_volgers") is not None
+
+            if heeft_ig:
+                st.markdown(
+                    f'<p style="font-size:13px;font-weight:700;color:{PLATFORM_COLORS["instagram"]};'
+                    f'margin:8px 0 4px;">Instagram</p>',
+                    unsafe_allow_html=True,
+                )
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Volgers", _format_stat(latest.get("instagram_volgers")),
+                          _stat_delta(history, "instagram_volgers"))
+                c2.metric("Bereik (7d)", _format_stat(latest.get("instagram_bereik_7d")),
+                          _stat_delta(history, "instagram_bereik_7d"))
+                c3.metric("Weergaven (7d)", _format_stat(latest.get("instagram_impressies_7d")),
+                          _stat_delta(history, "instagram_impressies_7d"))
+                c4.metric("Profielbezoeken (7d)", _format_stat(latest.get("instagram_profielbezoeken_7d")),
+                          _stat_delta(history, "instagram_profielbezoeken_7d"))
+
+            if heeft_fb:
+                st.markdown(
+                    f'<p style="font-size:13px;font-weight:700;color:{PLATFORM_COLORS["facebook"]};'
+                    f'margin:20px 0 4px;">Facebook</p>',
+                    unsafe_allow_html=True,
+                )
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Volgers", _format_stat(latest.get("facebook_volgers")),
+                          _stat_delta(history, "facebook_volgers"))
+                c2.metric("Bereik (7d)", _format_stat(latest.get("facebook_bereik_7d")),
+                          _stat_delta(history, "facebook_bereik_7d"))
+                c3.metric("Paginaweergaven (7d)", _format_stat(latest.get("facebook_impressies_7d")),
+                          _stat_delta(history, "facebook_impressies_7d"))
+                c4.metric("Engagement (7d)", _format_stat(latest.get("facebook_engagement_7d")),
+                          _stat_delta(history, "facebook_engagement_7d"))
+
+            # ── Trendgrafiek (zodra er meerdere metingen zijn) ──────────────────
+            if len(history) > 1:
+                st.markdown(
+                    '<p style="font-size:13px;font-weight:700;color:var(--ink);'
+                    'margin:24px 0 4px;">Volgersgroei over tijd</p>',
+                    unsafe_allow_html=True,
+                )
+                chart_cols = {"datum": [r["datum"] for r in history]}
+                if heeft_ig:
+                    chart_cols["Instagram volgers"] = [r.get("instagram_volgers") for r in history]
+                if heeft_fb:
+                    chart_cols["Facebook volgers"] = [r.get("facebook_volgers") for r in history]
+                if len(chart_cols) > 1:
+                    import pandas as pd
+                    df = pd.DataFrame(chart_cols).set_index("datum")
+                    st.line_chart(df)
+            else:
+                st.caption(
+                    "📈 De trendgrafiek verschijnt zodra er meerdere metingen zijn opgeslagen "
+                    "(de statistieken worden periodiek opnieuw opgehaald)."
+                )
+
+    st.caption(f"Laatste update: {_now_ams().strftime('%H:%M:%S')}")
 
 
 # ── Team-beheer (alleen admin) ────────────────────────────────────────────────
