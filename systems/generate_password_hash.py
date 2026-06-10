@@ -10,13 +10,13 @@ Plak de uitvoer in je Streamlit Cloud secrets onder:
 """
 
 import getpass
-import streamlit_authenticator as stauth
+import bcrypt
 
 
 def main():
     print("=== Top Socials — wachtwoord-hash generator ===\n")
     wachtwoord = getpass.getpass("Voer het wachtwoord in: ")
-    hashed = stauth.Hasher([wachtwoord]).generate()[0]
+    hashed = bcrypt.hashpw(wachtwoord.encode(), bcrypt.gensalt()).decode()
     print(f"\nHash voor in secrets.toml:\n")
     print(f'password = "{hashed}"')
     print()
