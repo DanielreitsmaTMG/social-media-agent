@@ -589,10 +589,12 @@ div[class*="st-key-tile-"]:hover {{
 div[class*="st-key-tile-"] [data-testid="stVerticalBlock"] {{
     gap: 0 !important;
 }}
-div[class*="st-key-tile-"] [data-testid="stExpander"] {{
+div[class*="st-key-tile-"] [data-testid="stExpander"],
+div[class*="st-key-tile-"] [data-testid="stExpander"] > details,
+div[class*="st-key-tile-"] [data-testid="stExpander"] summary,
+div[class*="st-key-tile-"] [data-testid="stExpander"] > div {{
     background: transparent !important;
     border: none !important;
-    border-top: 1px solid var(--line) !important;
     border-radius: 0 !important;
     box-shadow: none !important;
     margin: 0 !important;
