@@ -29,7 +29,6 @@ import gspread
 import streamlit as st
 import streamlit.components.v1 as components
 import bcrypt
-from streamlit_cookies_controller import CookieController
 from google.oauth2.service_account import Credentials as WriteCredentials
 from google.oauth2.service_account import Credentials
 from dotenv import load_dotenv
@@ -678,11 +677,9 @@ if not _auth_active:
     _logged_in_name = "Developer (lokaal)"
     _logged_in_role = "admin"
 else:
-    _cookie_controller = CookieController()
-
-    # ── Sessie herstellen vanuit cookie (blijft 12 uur geldig) ──────────────────
+    # ── Sessie herstellen via URL-token (blijft 12 uur geldig, ook na refresh) ──
     if not st.session_state.get("_ts_logged_in"):
-        _token = _cookie_controller.get(AUTH_COOKIE_NAME)
+        _token = st.query_params.get(AUTH_COOKIE_NAME)
         if _token:
             _restored_user = _verify_session_token(_token)
             if _restored_user and _restored_user in _users:
@@ -690,6 +687,9 @@ else:
                 st.session_state["_ts_username"]  = _restored_user
                 st.session_state["_ts_name"]      = _users[_restored_user].get("name", _restored_user)
                 st.session_state["_ts_role"]      = _users[_restored_user].get("role", "reviewer")
+            else:
+                # Ongeldig/verlopen token → verwijderen uit de URL
+                del st.query_params[AUTH_COOKIE_NAME]
 
     # ── Login-check ───────────────────────────────────────────────────────────
     if not st.session_state.get("_ts_logged_in"):
@@ -722,11 +722,7 @@ else:
                 st.session_state["_ts_username"]    = user_key
                 st.session_state["_ts_name"]        = user_data.get("name", user_key)
                 st.session_state["_ts_role"]        = user_data.get("role", "reviewer")
-                _cookie_controller.set(
-                    AUTH_COOKIE_NAME,
-                    _make_session_token(user_key),
-                    max_age=SESSION_HOURS * 3600,
-                )
+                st.query_params[AUTH_COOKIE_NAME] = _make_session_token(user_key)
                 st.rerun()
             else:
                 st.error("❌ Onjuist e-mailadres of wachtwoord.")
@@ -753,7 +749,7 @@ with st.sidebar:
         if st.button("Uitloggen", use_container_width=True):
             for k in ["_ts_logged_in", "_ts_username", "_ts_name", "_ts_role"]:
                 st.session_state.pop(k, None)
-            _cookie_controller.remove(AUTH_COOKIE_NAME)
+            st.query_params.pop(AUTH_COOKIE_NAME, None)
             st.rerun()
 
 # ── Merk-header ───────────────────────────────────────────────────────────────
