@@ -318,7 +318,9 @@ input, textarea, select,
 }}
 
 /* ── Canvas ── */
-.stApp {{ background: var(--bg) !important; }}
+html, body, .stApp,
+[data-testid="stAppViewContainer"], [data-testid="stMain"],
+.main, .main > div {{ background: var(--bg) !important; }}
 .block-container {{ padding: 2rem 2.5rem 5rem !important; max-width: 1240px !important; }}
 
 /* ── Streamlit chrome verbergen ── */
@@ -326,7 +328,9 @@ input, textarea, select,
     visibility: hidden; height: 0; overflow: hidden;
 }}
 [data-testid="stToolbar"], [data-testid="manage-app-button"],
-.stDeployButton {{ display: none !important; }}
+.stDeployButton, [data-testid="stDecoration"], [data-testid="stStatusWidget"] {{
+    display: none !important;
+}}
 
 /* ── Koppen ── */
 h1, h2, h3, h4 {{
@@ -531,6 +535,8 @@ hr {{ border-color: var(--line) !important; margin: 1.5rem 0 !important; }}
 [data-testid="stForm"],
 [data-testid="stForm"] > div,
 [data-testid="stForm"] > div > div,
+[data-testid="stVerticalBlockBorderWrapper"],
+[data-testid="stVerticalBlockBorderWrapper"] > div,
 div[class*="stForm"],
 section[data-testid="stForm"] {{
     background: transparent !important;
