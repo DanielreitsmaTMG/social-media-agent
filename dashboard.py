@@ -579,6 +579,7 @@ div[class*="st-key-tile-"] {{
     border-radius: var(--r-card);
     box-shadow: var(--shadow);
     overflow: hidden;
+    margin-bottom: 28px;
     transition: box-shadow .2s ease, transform .2s ease;
 }}
 div[class*="st-key-tile-"]:hover {{
@@ -597,34 +598,35 @@ div[class*="st-key-tile-"] [data-testid="stExpander"] {{
     margin: 0 !important;
 }}
 .ts-tile {{
-    padding: 18px 16px 14px;
+    padding: 26px 26px 22px;
     cursor: default;
-    height: 148px;
+    height: 196px;
     box-sizing: border-box;
     display: flex; flex-direction: column; justify-content: space-between;
 }}
 .ts-tile-top {{
-    display: flex; align-items: flex-start; gap: 10px;
+    display: flex; align-items: center; gap: 14px;
 }}
 .ts-tile-fav {{
-    width: 34px; height: 34px; border-radius: 9px;
+    width: 46px; height: 46px; border-radius: 12px;
     background: var(--ps); flex-shrink: 0;
     object-fit: contain;
     border: 0.5px solid rgba(0,0,0,.06);
 }}
 .ts-tile-name {{
-    font-size: 13px; font-weight: 700;
+    font-size: 16px; font-weight: 700;
     color: var(--ink); letter-spacing: -0.02em;
-    line-height: 1.3;
+    line-height: 1.35;
     display: -webkit-box; -webkit-line-clamp: 2;
     -webkit-box-orient: vertical; overflow: hidden;
 }}
 .ts-tile-badges {{
-    display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px;
+    display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px;
 }}
 .ts-tile-foot {{
-    font-size: 11px; font-weight: 500;
+    font-size: 12px; font-weight: 500;
     color: var(--ink3); letter-spacing: .01em;
+    margin-top: 14px;
 }}
 
 /* ── Login-form: verberg Streamlit's eigen form-wrapper ── */
@@ -832,11 +834,11 @@ with tab_klanten:
             unsafe_allow_html=True,
         )
 
-        # ── Tegeltjesraster: 4 per rij ────────────────────────────────────────
-        COLS = 4
+        # ── Tegeltjesraster: 3 per rij, ruim opgezet ─────────────────────────────
+        COLS = 3
         for row_start in range(0, len(clients), COLS):
             row_clients = clients[row_start : row_start + COLS]
-            cols = st.columns(COLS, gap="small")
+            cols = st.columns(COLS, gap="large")
 
             for col_idx, (col, client) in enumerate(zip(cols, row_clients)):
                 total     = _total_posts_pw(client)
@@ -850,9 +852,9 @@ with tab_klanten:
                     if count:
                         c = PLATFORM_COLORS[platform]
                         badge_parts.append(
-                            f'<span style="display:inline-flex;align-items:center;gap:3px;'
-                            f'background:{c}15;color:{c};border-radius:6px;'
-                            f'padding:3px 7px;font-size:11px;font-weight:600;letter-spacing:.01em;">'
+                            f'<span style="display:inline-flex;align-items:center;gap:5px;'
+                            f'background:{c}15;color:{c};border-radius:8px;'
+                            f'padding:5px 10px;font-size:12px;font-weight:600;letter-spacing:.01em;">'
                             f'{PLATFORM_ICON_HTML[platform]}{label}</span>'
                         )
                 badges_html = " ".join(badge_parts)
