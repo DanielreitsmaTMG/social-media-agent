@@ -33,6 +33,7 @@ REQUIRED_COLUMNS = {
 OPTIONAL_COLUMNS = {
     "extra_context",
     "website_url", "instagram_url", "facebook_url", "linkedin_url",
+    "instagram_business_account_id", "facebook_page_id",
 }
 
 

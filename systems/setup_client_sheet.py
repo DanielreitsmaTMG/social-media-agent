@@ -38,6 +38,9 @@ HEADERS = [
     "instagram_url",
     "facebook_url",
     "linkedin_url",
+    # Meta Graph API-koppeling (voor realtime statistieken)
+    "instagram_business_account_id",
+    "facebook_page_id",
     # Weekcontext (wordt wekelijks bijgewerkt)
     "extra_context",
     # Aflevering
@@ -61,6 +64,8 @@ EXAMPLE_ROWS = [
         "https://www.facebook.com/aurainterieur",
         "https://www.linkedin.com/company/aura-interieur/",
         "",
+        "",
+        "",
         "1A2B3C4D5E6F7G8H",
     ],
     [
@@ -79,6 +84,8 @@ EXAMPLE_ROWS = [
         "",
         "https://www.linkedin.com/company/hoogehuys/",
         "",
+        "",
+        "",
         "2B3C4D5E6F7G8H9I",
     ],
 ]
@@ -95,6 +102,8 @@ COLUMN_NOTES = {
     "instagram_url": "Volledig profiel-URL — wordt gescraped voor bio en stijl",
     "facebook_url": "Volledig pagina-URL — wordt gescraped voor beschrijving",
     "linkedin_url": "Volledig bedrijfspagina-URL — wordt gescraped voor beschrijving",
+    "instagram_business_account_id": "Numeriek ID via systems/list_meta_accounts.py — voor realtime statistieken",
+    "facebook_page_id": "Numeriek ID via systems/list_meta_accounts.py — voor realtime statistieken",
     "extra_context": "Wekelijks bij te werken: lopende campagnes, acties, seizoen",
     "google_doc_folder_id": "Google Drive folder-ID uit de URL van de klantmap",
 }
@@ -147,8 +156,10 @@ def main():
         14: 220,  # instagram_url
         15: 220,  # facebook_url
         16: 220,  # linkedin_url
-        17: 300,  # extra_context
-        18: 200,  # google_doc_folder_id
+        17: 240,  # instagram_business_account_id
+        18: 200,  # facebook_page_id
+        19: 300,  # extra_context
+        20: 200,  # google_doc_folder_id
     }
     requests = [
         {
