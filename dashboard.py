@@ -393,7 +393,7 @@ hr {{ border-color: var(--line) !important; margin: 1.5rem 0 !important; }}
     border-radius: var(--r-card);
     padding: 20px 24px;
     box-shadow: var(--shadow);
-    min-height: 96px;
+    height: 132px;
     box-sizing: border-box;
     display: flex; flex-direction: column; justify-content: center;
 }}
