@@ -5,9 +5,13 @@ Maakt het tabblad aan als het niet bestaat; overschrijft als het al bestaat.
 Tabbladnaam: Posts_YYYY_WXX  (bijv. Posts_2026_W24)
 
 Kolommen:
-  klant_id | bedrijfsnaam | platform | dag | publicatiedatum | caption | hashtags | status | opmerkingen
+  klant_id | bedrijfsnaam | platform | dag | publicatiedatum | caption | hashtags |
+  status | opmerkingen | beeldtitel | geplande_datum | geplande_tijd | afbeelding_url |
+  afbeelding_drive_id | publicatie_status | meta_post_id | publicatie_log
 
 Status begint als 'concept'. Via het dashboard kan dit 'goedgekeurd' of 'afgewezen' worden.
+De planningskolommen (geplande_datum t/m publicatie_log) worden later vanuit de
+"📅 Planning"-tab in het dashboard ingevuld (zie blueprints/content_planning.md).
 
 Usage:
     python systems/upload_posts_to_sheets.py
@@ -35,6 +39,8 @@ SCOPES = [
 HEADERS = [
     "klant_id", "bedrijfsnaam", "platform", "dag",
     "publicatiedatum", "caption", "hashtags", "status", "opmerkingen", "beeldtitel",
+    "geplande_datum", "geplande_tijd", "afbeelding_url", "afbeelding_drive_id",
+    "publicatie_status", "meta_post_id", "publicatie_log",
 ]
 
 MONTHS_NL = [
@@ -110,13 +116,20 @@ def upload_posts(posts_data: dict, spreadsheet_id: str, service_account_json: st
                     "concept",
                     "",
                     post.get("beeldtitel", ""),
+                    "",  # geplande_datum
+                    "",  # geplande_tijd
+                    "",  # afbeelding_url
+                    "",  # afbeelding_drive_id
+                    "",  # publicatie_status
+                    "",  # meta_post_id
+                    "",  # publicatie_log
                 ])
 
     worksheet.update(rows, value_input_option="RAW")
 
     # Opmaak: header vet, kolommen bevries
     worksheet.freeze(rows=1)
-    worksheet.format("A1:J1", {"textFormat": {"bold": True}})
+    worksheet.format("A1:Q1", {"textFormat": {"bold": True}})
 
     print(f"{len(rows) - 1} posts geüpload naar tabblad '{tab_name}'")
     return tab_name

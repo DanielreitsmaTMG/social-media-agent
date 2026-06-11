@@ -1,0 +1,30 @@
+name: Publiceer ingeplande posts
+
+on:
+  schedule:
+    # Elke 15 minuten. GitHub Actions cron is niet seconde-precies — een paar
+    # minuten vertraging is mogelijk en geen probleem voor deze use-case.
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Installeer dependencies
+        run: pip install -r requirements.txt
+
+      - name: Publiceer ingeplande posts
+        env:
+          GOOGLE_SHEETS_SPREADSHEET_ID: ${{ secrets.GOOGLE_SHEETS_SPREADSHEET_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+        run: python systems/publish_scheduled_posts.py

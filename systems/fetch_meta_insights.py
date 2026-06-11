@@ -19,25 +19,16 @@ overgeslagen (nog niet gekoppeld aan het Business Manager-portfolio).
 """
 
 import argparse
-import json
 import os
 import sys
 from datetime import date, timedelta
 
 import gspread
-import requests
 from dotenv import load_dotenv
-from google.oauth2.service_account import Credentials
+
+from meta_common import _graph_get, _graph_get_url, _page_access_tokens, _sheet_client
 
 load_dotenv(override=True)
-
-SCOPES = [
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive",
-]
-
-GRAPH_VERSION = "v21.0"
-GRAPH_URL = f"https://graph.facebook.com/{GRAPH_VERSION}"
 
 ID_COLUMNS = ["instagram_business_account_id", "facebook_page_id"]
 
@@ -55,16 +46,6 @@ STATS_HEADERS = [
     "facebook_impressies_7d",
     "facebook_engagement_7d",
 ]
-
-
-def _sheet_client():
-    service_account_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
-    if not service_account_json:
-        raise EnvironmentError("GOOGLE_SERVICE_ACCOUNT_JSON ontbreekt in .env")
-    creds = Credentials.from_service_account_info(
-        json.loads(service_account_json), scopes=SCOPES
-    )
-    return gspread.authorize(creds)
 
 
 def _ensure_columns(worksheet, headers: list[str], required: list[str]) -> dict[str, int]:
@@ -87,22 +68,6 @@ def _ensure_stats_sheet(spreadsheet):
         ws.freeze(rows=1)
         print(f'Tabblad "{STATS_SHEET_NAME}" aangemaakt.')
     return ws
-
-
-def _graph_get(path: str, params: dict) -> dict:
-    resp = requests.get(f"{GRAPH_URL}/{path}", params=params, timeout=20)
-    data = resp.json()
-    if "error" in data:
-        raise RuntimeError(data["error"].get("message", "Onbekende Graph API-fout"))
-    return data
-
-
-def _graph_get_url(url: str) -> dict:
-    resp = requests.get(url, timeout=20)
-    data = resp.json()
-    if "error" in data:
-        raise RuntimeError(data["error"].get("message", "Onbekende Graph API-fout"))
-    return data
 
 
 def _ig_insight_total(ig_id: str, metric: str, since, until, token: str):
@@ -213,25 +178,6 @@ def _facebook_stats(page_id: str, token: str, page_token: str = None) -> dict:
             print(f"    ⚠️  FB {metric} ophalen mislukt: {e}")
 
     return out
-
-
-def _page_access_tokens(token: str) -> dict:
-    """Haalt per Facebook-pagina een Page Access Token op (nodig voor /insights)."""
-    tokens = {}
-    url = "me/accounts"
-    params = {"access_token": token, "limit": 100}
-    while url:
-        try:
-            data = _graph_get(url, params) if params else _graph_get_url(url)
-        except RuntimeError as e:
-            print(f"  ⚠️  Page access tokens ophalen mislukt: {e}")
-            break
-        for page in data.get("data", []):
-            if page.get("id") and page.get("access_token"):
-                tokens[page["id"]] = page["access_token"]
-        url = data.get("paging", {}).get("next")
-        params = None
-    return tokens
 
 
 def main():

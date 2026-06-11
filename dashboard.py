@@ -22,6 +22,7 @@ import re
 import time
 import zipfile
 from datetime import datetime, date, timedelta
+from datetime import time as dtime
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
@@ -32,6 +33,8 @@ import bcrypt
 from google.oauth2.service_account import Credentials as WriteCredentials
 from google.oauth2.service_account import Credentials
 from dotenv import load_dotenv
+
+from systems import drive_upload
 
 load_dotenv(override=True)
 
@@ -88,6 +91,7 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
 WRITE_SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive",
 ]
 
 
@@ -1167,12 +1171,12 @@ with col3:
 st.divider()
 
 if _logged_in_role == "admin":
-    tab_klanten, tab_goedkeuring, tab_statistieken, tab_team = st.tabs(
-        ["📋 Klanten", "✅ Goedkeuring", "📊 Statistieken", "👥 Team"]
+    tab_klanten, tab_goedkeuring, tab_planning, tab_statistieken, tab_team = st.tabs(
+        ["📋 Klanten", "✅ Goedkeuring", "📅 Planning", "📊 Statistieken", "👥 Team"]
     )
 else:
-    tab_klanten, tab_goedkeuring, tab_statistieken = st.tabs(
-        ["📋 Klanten", "✅ Goedkeuring", "📊 Statistieken"]
+    tab_klanten, tab_goedkeuring, tab_planning, tab_statistieken = st.tabs(
+        ["📋 Klanten", "✅ Goedkeuring", "📅 Planning", "📊 Statistieken"]
     )
     tab_team = None
 
@@ -1287,6 +1291,25 @@ STATUS_OPTIONS  = ["concept", "goedgekeurd", "afgewezen"]
 STATUS_COLORS   = {"concept": "#f59e0b", "goedgekeurd": "#22c55e", "afgewezen": "#ef4444"}
 STATUS_LABELS   = {"concept": "⏳ Concept", "goedgekeurd": "✅ Goedgekeurd", "afgewezen": "❌ Afgewezen"}
 
+# ── Planning-tab: kolommen K-Q in Posts_YYYY_WNN ─────────────────────────────
+PLANNING_HEADERS = [
+    "geplande_datum", "geplande_tijd", "afbeelding_url", "afbeelding_drive_id",
+    "publicatie_status", "meta_post_id", "publicatie_log",
+]
+PLANNING_COL_LETTERS = {
+    "geplande_datum": "K", "geplande_tijd": "L", "afbeelding_url": "M",
+    "afbeelding_drive_id": "N", "publicatie_status": "O",
+    "meta_post_id": "P", "publicatie_log": "Q",
+}
+PUB_STATUS_COLORS = {
+    "": "#9ca3af", "gepland": "#3b82f6", "bezig": "#f59e0b",
+    "gepubliceerd": "#22c55e", "mislukt": "#ef4444",
+}
+PUB_STATUS_LABELS = {
+    "": "— Niet ingepland", "gepland": "🕒 Gepland", "bezig": "⏳ Bezig met publiceren",
+    "gepubliceerd": "✅ Gepubliceerd", "mislukt": "❌ Mislukt",
+}
+
 
 def _get_write_client(sa_info: dict):
     creds = WriteCredentials.from_service_account_info(sa_info, scopes=WRITE_SCOPES)
@@ -1367,6 +1390,36 @@ def save_statuses(spreadsheet_id: str, tab_name: str, updates: dict, sa_info_jso
     batch = []
     for row_idx, (status, opmerking) in updates.items():
         batch.append({"range": f"H{row_idx}:I{row_idx}", "values": [[status, opmerking]]})
+    worksheet.batch_update(batch, value_input_option="RAW")
+
+
+def _ensure_planning_columns(worksheet):
+    """Vult de header-rij aan met de planningskolommen (K-Q) als die nog ontbreken.
+    Oudere Posts_*-tabbladen (geüpload vóór deze feature) hebben alleen kolom A-J."""
+    headers = worksheet.row_values(1)
+    if len(headers) >= 17 and headers[10:17] == PLANNING_HEADERS:
+        return
+    headers = headers[:10]
+    while len(headers) < 10:
+        headers.append("")
+    headers = headers + PLANNING_HEADERS
+    worksheet.update(range_name="A1", values=[headers], value_input_option="RAW")
+    worksheet.format("A1:Q1", {"textFormat": {"bold": True}})
+
+
+def save_planning_fields(spreadsheet_id: str, tab_name: str, row_idx: int, fields: dict, sa_info_json: str):
+    """Schrijft één of meer planningsvelden voor een rij weg.
+    fields = {"geplande_datum": ..., "publicatie_status": ..., ...} (keys uit PLANNING_HEADERS)."""
+    if not fields:
+        return
+    sa_info = json.loads(sa_info_json)
+    gc = _get_write_client(sa_info)
+    worksheet = gc.open_by_key(spreadsheet_id).worksheet(tab_name)
+    _ensure_planning_columns(worksheet)
+    batch = []
+    for key, val in fields.items():
+        col = PLANNING_COL_LETTERS[key]
+        batch.append({"range": f"{col}{row_idx}", "values": [[val]]})
     worksheet.batch_update(batch, value_input_option="RAW")
 
 
@@ -1725,6 +1778,197 @@ def _render_post_card(selected_tab, row_idx, post, color, client_dict, spreadshe
         "<hr style='margin:4px 0 10px 0;border:none;border-top:1px solid #eee;'>",
         unsafe_allow_html=True,
     )
+
+
+def _render_planning_card(row_idx, post, bedrijfsnaam, client_dict, spreadsheet_id, selected_tab, sa_json):
+    """Eén kaart per goedgekeurde post: afbeelding uploaden + datum/tijd inplannen."""
+    platform = post.get("platform", "")
+    color = PLATFORM_COLORS.get(platform, "#999")
+    icon = PLATFORM_ICON_HTML.get(platform, "")
+
+    col_post, col_img, col_plan = st.columns([4, 2, 3])
+
+    with col_post:
+        st.markdown(
+            f'<p style="font-weight:600;font-size:13px;margin:4px 0 2px 0;">'
+            f'{icon}📅 {post.get("dag","")} — {post.get("publicatiedatum","")}</p>'
+            f'<div style="background:#f8f8f8;border-left:3px solid {color};'
+            f'padding:8px 12px;border-radius:0 8px 8px 0;font-size:13px;white-space:pre-wrap;'
+            f'max-height:120px;overflow-y:auto;">'
+            f'{post.get("caption","")}</div>'
+            f'<p style="font-size:11px;color:{color};margin:3px 0 4px 0;">{post.get("hashtags","")}</p>',
+            unsafe_allow_html=True,
+        )
+        if post.get("beeldtitel"):
+            st.caption(f"🖼️ {post['beeldtitel']}")
+
+    afbeelding_url = post.get("afbeelding_url", "")
+    with col_img:
+        if afbeelding_url:
+            st.image(afbeelding_url, use_container_width=True)
+        uploaded = st.file_uploader(
+            "Afbeelding",
+            type=["png", "jpg", "jpeg"],
+            key=f"upload_{selected_tab}_{row_idx}",
+            label_visibility="collapsed",
+        )
+        if uploaded is not None:
+            folder_id = client_dict.get(bedrijfsnaam, {}).get("google_doc_folder_id", "").strip()
+            if not folder_id:
+                st.error("Geen Drive-map gekoppeld aan deze klant (kolom 'google_doc_folder_id' ontbreekt).")
+            else:
+                with st.spinner("Uploaden naar Drive..."):
+                    try:
+                        sa_info = json.loads(sa_json)
+                        result = drive_upload.upload_image(
+                            sa_info, folder_id, uploaded.name,
+                            uploaded.getvalue(), uploaded.type or "image/jpeg",
+                        )
+                        save_planning_fields(
+                            spreadsheet_id, selected_tab, row_idx,
+                            {"afbeelding_url": result["url"], "afbeelding_drive_id": result["id"]},
+                            sa_json,
+                        )
+                        load_posts_from_tab.clear()
+                        st.success("✓ Afbeelding geüpload")
+                        st.rerun(scope="fragment")
+                    except Exception as e:
+                        st.error(f"Upload mislukt: {e}")
+
+    pub_status = post.get("publicatie_status", "")
+    with col_plan:
+        if pub_status in ("gepland", "bezig", "gepubliceerd"):
+            badge_color = PUB_STATUS_COLORS.get(pub_status, "#9ca3af")
+            badge_label = PUB_STATUS_LABELS.get(pub_status, pub_status)
+            st.markdown(
+                f'<div style="background:{badge_color};color:#fff;font-weight:700;'
+                f'text-align:center;border-radius:8px;padding:5px 8px;font-size:12px;'
+                f'margin-bottom:8px;">{badge_label}</div>',
+                unsafe_allow_html=True,
+            )
+            if post.get("geplande_datum"):
+                st.caption(f"🕒 {post['geplande_datum']} om {post.get('geplande_tijd','')}")
+            if pub_status == "gepubliceerd" and post.get("meta_post_id"):
+                st.caption(f"Post-ID: {post['meta_post_id']}")
+            if pub_status == "gepland":
+                if st.button("❌ Annuleer planning", key=f"cancel_{selected_tab}_{row_idx}",
+                              use_container_width=True):
+                    save_planning_fields(
+                        spreadsheet_id, selected_tab, row_idx,
+                        {"geplande_datum": "", "geplande_tijd": "", "publicatie_status": ""},
+                        sa_json,
+                    )
+                    load_posts_from_tab.clear()
+                    st.rerun(scope="fragment")
+        else:
+            if pub_status == "mislukt":
+                st.markdown(
+                    f'<div style="background:{PUB_STATUS_COLORS["mislukt"]};color:#fff;font-weight:700;'
+                    f'text-align:center;border-radius:8px;padding:5px 8px;font-size:12px;'
+                    f'margin-bottom:6px;">{PUB_STATUS_LABELS["mislukt"]}</div>',
+                    unsafe_allow_html=True,
+                )
+                if post.get("publicatie_log"):
+                    st.caption(f"⚠️ {post['publicatie_log']}")
+
+            default_date_str = post.get("geplande_datum") or ""
+            try:
+                default_date = date.fromisoformat(default_date_str) if default_date_str else date.today()
+            except ValueError:
+                default_date = date.today()
+
+            default_time_str = post.get("geplande_tijd") or "09:00"
+            try:
+                h, m = default_time_str.split(":")
+                default_time = dtime(int(h), int(m))
+            except (ValueError, TypeError):
+                default_time = dtime(9, 0)
+
+            d = st.date_input("Datum", value=default_date, key=f"date_{selected_tab}_{row_idx}",
+                               label_visibility="collapsed")
+            t = st.time_input("Tijd", value=default_time, key=f"time_{selected_tab}_{row_idx}",
+                               label_visibility="collapsed")
+
+            if not afbeelding_url:
+                st.caption("⚠️ Upload eerst een afbeelding")
+
+            if st.button("📌 Inplannen", key=f"plan_{selected_tab}_{row_idx}",
+                          use_container_width=True, disabled=not afbeelding_url):
+                save_planning_fields(
+                    spreadsheet_id, selected_tab, row_idx,
+                    {
+                        "geplande_datum": d.isoformat(),
+                        "geplande_tijd": t.strftime("%H:%M"),
+                        "publicatie_status": "gepland",
+                        "publicatie_log": "",
+                    },
+                    sa_json,
+                )
+                load_posts_from_tab.clear()
+                st.success("✓ Ingepland")
+                st.rerun(scope="fragment")
+
+    st.markdown(
+        "<hr style='margin:4px 0 10px 0;border:none;border-top:1px solid #eee;'>",
+        unsafe_allow_html=True,
+    )
+
+
+@st.fragment
+def render_planning_interface(posts, client_dict, spreadsheet_id, selected_tab, sa_json):
+    """Plan-tab: afbeeldingen uploaden en datum/tijd inplannen voor goedgekeurde posts.
+    Publicatie zelf gebeurt via systems/publish_scheduled_posts.py (GitHub Actions cron)."""
+    planbaar = [(i, p) for i, p in enumerate(posts, start=2) if p.get("status") == "goedgekeurd"]
+
+    if not planbaar:
+        st.info(
+            "Nog geen goedgekeurde posts in deze week. Keur eerst posts goed in de tab "
+            "'✅ Goedkeuring' — daarna verschijnen ze hier om in te plannen."
+        )
+        return
+
+    # ── Agenda-overzicht: alle ingeplande posts, gesorteerd op datum/tijd ───────
+    geplande = [(i, p) for i, p in planbaar if p.get("geplande_datum")]
+    if geplande:
+        st.markdown('<p class="ts-stat-title">🗓️ Agenda — ingeplande posts</p>', unsafe_allow_html=True)
+        for i, p in sorted(geplande, key=lambda ip: (ip[1].get("geplande_datum", ""), ip[1].get("geplande_tijd", ""))):
+            platform = p.get("platform", "")
+            icon = PLATFORM_ICON_HTML.get(platform, "")
+            pub_status = p.get("publicatie_status", "")
+            badge_color = PUB_STATUS_COLORS.get(pub_status, "#9ca3af")
+            badge_label = PUB_STATUS_LABELS.get(pub_status, pub_status)
+            afbeelding_url = p.get("afbeelding_url", "")
+            thumb_html = (
+                f'<img class="ts-post-thumb" src="{afbeelding_url}" alt="">'
+                if afbeelding_url else '<div class="ts-post-thumb ts-post-thumb-empty">🖼️</div>'
+            )
+            st.markdown(
+                f'<div class="ts-post-card" style="display:flex;align-items:center;gap:12px;">'
+                f'{thumb_html}'
+                f'<div style="flex:1;">'
+                f'{icon}<span style="font-weight:600;">{p.get("bedrijfsnaam","")}</span>'
+                f'<div style="font-size:12px;color:#666;">{p.get("geplande_datum","")} · {p.get("geplande_tijd","")}</div>'
+                f'</div>'
+                f'<div style="background:{badge_color};color:#fff;font-weight:700;border-radius:8px;'
+                f'padding:4px 10px;font-size:12px;white-space:nowrap;">{badge_label}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+            if pub_status == "mislukt" and p.get("publicatie_log"):
+                st.caption(f"⚠️ {p['publicatie_log']}")
+        st.divider()
+
+    # ── Per klant: posts uploaden/inplannen ──────────────────────────────────
+    st.markdown('<p class="ts-stat-title">📤 Afbeeldingen uploaden & inplannen</p>', unsafe_allow_html=True)
+
+    by_client: dict[str, list] = {}
+    for i, p in planbaar:
+        by_client.setdefault(p.get("bedrijfsnaam", "Onbekend"), []).append((i, p))
+
+    for naam, rows in by_client.items():
+        with st.expander(f"{naam} ({len(rows)} post{'s' if len(rows) != 1 else ''})", expanded=(len(by_client) == 1)):
+            for i, p in rows:
+                _render_planning_card(i, p, naam, client_dict, spreadsheet_id, selected_tab, sa_json)
 
 
 @st.fragment
@@ -2175,6 +2419,44 @@ with tab_goedkeuring:
 
             client_dict = load_client_dict(spreadsheet_id, sa_json)
             render_approval_interface(posts, client_dict, spreadsheet_id, selected_tab, sa_json)
+
+
+# ── Planning tab ──────────────────────────────────────────────────────────────
+
+with tab_planning:
+    st.subheader("Content inplannen")
+    st.caption(
+        "Upload een afbeelding bij een goedgekeurde post en plan een datum/tijd in. "
+        "Ingeplande posts worden automatisch gepubliceerd op Instagram en Facebook."
+    )
+
+    spreadsheet_id = os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID") or st.secrets.get("GOOGLE_SHEETS_SPREADSHEET_ID")
+    sa_json = _sa_info_json()
+
+    if not spreadsheet_id or not sa_json:
+        st.error("Credentials ontbreken.")
+    else:
+        tabs = load_post_tabs(spreadsheet_id, sa_json)
+        if not tabs:
+            st.info("Nog geen posts beschikbaar. Voer eerst de pipeline uit.")
+        else:
+            selected_tab = st.selectbox(
+                "Selecteer een week",
+                tabs,
+                format_func=lambda t: t.replace("Posts_", "").replace("_W", " · Week "),
+                key="planning_week_select",
+            )
+            posts = load_posts_from_tab(spreadsheet_id, selected_tab, sa_json)
+
+            # Filter posts op basis van rol
+            if _logged_in_role != "admin":
+                _assignments_p = load_medewerker_assignments(spreadsheet_id, sa_json)
+                _allowed_p     = _assignments_p.get(_logged_in_user, [])
+                if _allowed_p != "ALL":
+                    posts = [p for p in posts if p.get("bedrijfsnaam", "") in _allowed_p]
+
+            client_dict = load_client_dict(spreadsheet_id, sa_json)
+            render_planning_interface(posts, client_dict, spreadsheet_id, selected_tab, sa_json)
 
 
 # ── Statistieken tab ──────────────────────────────────────────────────────────
