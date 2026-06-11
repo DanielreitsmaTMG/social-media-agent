@@ -35,6 +35,7 @@ from google.oauth2.service_account import Credentials
 from dotenv import load_dotenv
 
 from systems import drive_upload
+from systems import publish_scheduled_posts as pub
 
 load_dotenv(override=True)
 
@@ -1439,6 +1440,26 @@ def load_client_dict(spreadsheet_id: str, sa_info_json: str) -> dict:
     return {c["bedrijfsnaam"]: c for c in clients}
 
 
+@st.cache_data(ttl=300)
+def load_meta_publish_context(spreadsheet_id: str, sa_info_json: str):
+    """Laadt {klant_id: {ig_id, page_id}} en Facebook Page Access Tokens, nodig voor
+    de "🚀 Nu publiceren"-knop in de Planning-tab. Geeft (accounts, page_tokens) terug;
+    bij ontbrekend META_ACCESS_TOKEN of een fout: ({}, {})."""
+    token = os.getenv("META_ACCESS_TOKEN") or st.secrets.get("META_ACCESS_TOKEN")
+    if not token:
+        return {}, {}
+    try:
+        sa_info = json.loads(sa_info_json)
+        creds = Credentials.from_service_account_info(sa_info, scopes=SCOPES)
+        gc = gspread.authorize(creds)
+        spreadsheet = gc.open_by_key(spreadsheet_id)
+        accounts = pub._load_meta_accounts(spreadsheet)
+        page_tokens = pub._page_access_tokens(token)
+        return accounts, page_tokens
+    except Exception:
+        return {}, {}
+
+
 def _regenerate_prompt(post: dict, client: dict) -> str:
     opmerking = post.get("opmerkingen", "").strip()
     return f"""De volgende social media post voor {client.get('bedrijfsnaam','')} werd afgewezen.
@@ -1780,7 +1801,8 @@ def _render_post_card(selected_tab, row_idx, post, color, client_dict, spreadshe
     )
 
 
-def _render_planning_card(row_idx, post, bedrijfsnaam, client_dict, spreadsheet_id, selected_tab, sa_json):
+def _render_planning_card(row_idx, post, bedrijfsnaam, client_dict, spreadsheet_id, selected_tab, sa_json,
+                           accounts=None, page_tokens=None):
     """Eén kaart per goedgekeurde post: afbeelding uploaden + datum/tijd inplannen."""
     platform = post.get("platform", "")
     color = PLATFORM_COLORS.get(platform, "#999")
@@ -1908,6 +1930,46 @@ def _render_planning_card(row_idx, post, bedrijfsnaam, client_dict, spreadsheet_
                 st.success("✓ Ingepland")
                 st.rerun(scope="fragment")
 
+        if platform in ("instagram", "facebook") and afbeelding_url and pub_status not in ("gepubliceerd", "bezig"):
+            meta_token = os.getenv("META_ACCESS_TOKEN") or st.secrets.get("META_ACCESS_TOKEN")
+            klant_id = post.get("klant_id", "")
+            account = (accounts or {}).get(klant_id, {})
+            if st.button("🚀 Nu publiceren", key=f"publish_now_{selected_tab}_{row_idx}",
+                          use_container_width=True):
+                if not meta_token:
+                    st.error("META_ACCESS_TOKEN ontbreekt — kan niet publiceren.")
+                else:
+                    save_planning_fields(
+                        spreadsheet_id, selected_tab, row_idx,
+                        {"publicatie_status": "bezig"}, sa_json,
+                    )
+                    try:
+                        post_id = pub.publish_post(post, account, page_tokens or {}, meta_token)
+                    except RuntimeError as e:
+                        save_planning_fields(
+                            spreadsheet_id, selected_tab, row_idx,
+                            {"publicatie_status": "mislukt", "publicatie_log": str(e)},
+                            sa_json,
+                        )
+                        load_posts_from_tab.clear()
+                        st.error(f"Publiceren mislukt: {e}")
+                    else:
+                        now = _now_ams()
+                        save_planning_fields(
+                            spreadsheet_id, selected_tab, row_idx,
+                            {
+                                "publicatie_status": "gepubliceerd",
+                                "meta_post_id": post_id,
+                                "publicatie_log": "",
+                                "geplande_datum": now.date().isoformat(),
+                                "geplande_tijd": now.strftime("%H:%M"),
+                            },
+                            sa_json,
+                        )
+                        load_posts_from_tab.clear()
+                        st.success("✓ Direct gepubliceerd")
+                        st.rerun(scope="fragment")
+
     st.markdown(
         "<hr style='margin:4px 0 10px 0;border:none;border-top:1px solid #eee;'>",
         unsafe_allow_html=True,
@@ -1916,8 +1978,10 @@ def _render_planning_card(row_idx, post, bedrijfsnaam, client_dict, spreadsheet_
 
 @st.fragment
 def render_planning_interface(posts, client_dict, spreadsheet_id, selected_tab, sa_json):
-    """Plan-tab: afbeeldingen uploaden en datum/tijd inplannen voor goedgekeurde posts.
-    Publicatie zelf gebeurt via systems/publish_scheduled_posts.py (GitHub Actions cron)."""
+    """Plan-tab: afbeeldingen uploaden, datum/tijd inplannen voor goedgekeurde posts, of
+    direct publiceren via "🚀 Nu publiceren". Geplande posts worden verder afgehandeld door
+    systems/publish_scheduled_posts.py (GitHub Actions cron)."""
+    accounts, page_tokens = load_meta_publish_context(spreadsheet_id, sa_json)
     planbaar = [(i, p) for i, p in enumerate(posts, start=2) if p.get("status") == "goedgekeurd"]
 
     if not planbaar:
@@ -1968,7 +2032,8 @@ def render_planning_interface(posts, client_dict, spreadsheet_id, selected_tab, 
     for naam, rows in by_client.items():
         with st.expander(f"{naam} ({len(rows)} post{'s' if len(rows) != 1 else ''})", expanded=(len(by_client) == 1)):
             for i, p in rows:
-                _render_planning_card(i, p, naam, client_dict, spreadsheet_id, selected_tab, sa_json)
+                _render_planning_card(i, p, naam, client_dict, spreadsheet_id, selected_tab, sa_json,
+                                       accounts, page_tokens)
 
 
 @st.fragment
@@ -2075,7 +2140,7 @@ def render_approval_interface(posts, client_dict, spreadsheet_id, selected_tab, 
     with st.expander(
         f"📊 Statusoverzicht — {len(not_started)} nog niet gestart · "
         f"{len(waiting_regen)} met afgewezen posts · {len(almost_done)} bijna klaar",
-        expanded=is_urgent,
+        expanded=False,
     ):
         ov1, ov2, ov3 = st.columns(3)
         with ov1:

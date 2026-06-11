@@ -1,6 +1,6 @@
 #!/bin/bash
 
-PROJECT_DIR="/Users/danielreitsma/Desktop/Marketing Agent Social Media"
+PROJECT_DIR="/Users/danielreitsma/Projects/Marketing Agent Social Media"
 LOG_FILE="$PROJECT_DIR/logs/pipeline_$(date +%Y-%m-%d).log"
 
 mkdir -p "$PROJECT_DIR/logs"

@@ -25,9 +25,15 @@ import argparse
 import os
 import sys
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
+
+# Maakt meta_common importeerbaar ongeacht of dit script direct wordt
+# uitgevoerd (python systems/publish_scheduled_posts.py) of geïmporteerd
+# wordt vanuit dashboard.py (from systems import publish_scheduled_posts).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from meta_common import _graph_get, _graph_post, _page_access_tokens, _sheet_client
 
@@ -116,6 +122,42 @@ def _publish_facebook(page_id: str, image_url: str, caption: str, page_token: st
     return post_id
 
 
+def _full_caption(post: dict) -> str:
+    caption = (post.get("caption") or "").strip()
+    hashtags = (post.get("hashtags") or "").strip()
+    return f"{caption}\n\n{hashtags}".strip() if hashtags else caption
+
+
+def publish_post(post: dict, account: dict, page_tokens: dict, token: str) -> str:
+    """Publiceert één post direct naar Instagram of Facebook. Geeft de post-id terug.
+
+    Wordt gebruikt door zowel `main()` (cron) als de "Nu publiceren"-knop in
+    de Planning-tab van dashboard.py. Verwacht `account = {"ig_id": ..., "page_id": ...}`
+    (zie `_load_meta_accounts`)."""
+    platform = post.get("platform", "")
+    afbeelding_url = (post.get("afbeelding_url") or "").strip()
+    if not afbeelding_url:
+        raise RuntimeError("Geen afbeelding geüpload")
+
+    full_caption = _full_caption(post)
+
+    if platform == "instagram":
+        ig_id = account.get("ig_id", "")
+        if not ig_id:
+            raise RuntimeError("Geen instagram_business_account_id gekoppeld voor deze klant")
+        return _publish_instagram(ig_id, afbeelding_url, full_caption, token)
+    elif platform == "facebook":
+        page_id = account.get("page_id", "")
+        page_token = page_tokens.get(page_id)
+        if not page_id:
+            raise RuntimeError("Geen facebook_page_id gekoppeld voor deze klant")
+        if not page_token:
+            raise RuntimeError("Geen Page Access Token gevonden voor deze pagina")
+        return _publish_facebook(page_id, afbeelding_url, full_caption, page_token)
+    else:
+        raise RuntimeError(f"Automatisch publiceren wordt niet ondersteund voor platform '{platform}'")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Publiceer ingeplande posts naar Instagram/Facebook")
     parser.add_argument("--dry-run", action="store_true", help="Toon wat er zou gebeuren, zonder te publiceren of de sheet bij te werken")
@@ -164,9 +206,6 @@ def main():
             bedrijfsnaam = post.get("bedrijfsnaam", klant_id)
             platform = post.get("platform", "")
             afbeelding_url = (post.get("afbeelding_url") or "").strip()
-            caption = (post.get("caption") or "").strip()
-            hashtags = (post.get("hashtags") or "").strip()
-            full_caption = f"{caption}\n\n{hashtags}".strip() if hashtags else caption
 
             print(f"  Rij {row_idx}: {bedrijfsnaam} · {platform}")
 
@@ -190,21 +229,7 @@ def main():
             ws.update(range_name=f"{COL_PUBLICATIE_STATUS}{row_idx}", values=[["bezig"]], value_input_option="RAW")
 
             try:
-                if platform == "instagram":
-                    ig_id = account.get("ig_id", "")
-                    if not ig_id:
-                        raise RuntimeError("Geen instagram_business_account_id gekoppeld voor deze klant")
-                    post_id = _publish_instagram(ig_id, afbeelding_url, full_caption, token)
-                elif platform == "facebook":
-                    page_id = account.get("page_id", "")
-                    page_token = page_tokens.get(page_id)
-                    if not page_id:
-                        raise RuntimeError("Geen facebook_page_id gekoppeld voor deze klant")
-                    if not page_token:
-                        raise RuntimeError("Geen Page Access Token gevonden voor deze pagina")
-                    post_id = _publish_facebook(page_id, afbeelding_url, full_caption, page_token)
-                else:
-                    raise RuntimeError(f"Automatisch publiceren wordt niet ondersteund voor platform '{platform}'")
+                post_id = publish_post(post, account, page_tokens, token)
             except RuntimeError as e:
                 print(f"    ❌ Mislukt: {e}")
                 ws.batch_update([

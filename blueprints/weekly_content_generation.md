@@ -149,3 +149,40 @@ ANTHROPIC_API_KEY=
 GOOGLE_SHEETS_SPREADSHEET_ID=
 GOOGLE_SERVICE_ACCOUNT_JSON=
 ```
+
+---
+
+## Automatisering (lokaal via launchd)
+
+De wekelijkse trigger (woensdag 23:00) draait **niet** via GitHub Actions, maar
+via een lokale macOS `launchd`-taak op de Mac van Daniel:
+
+- Plist: `~/Library/LaunchAgents/nl.topmediagroep.socialmedia.plist`
+- Roept `run_pipeline.sh` aan (stappen 1-5 hierboven, plus volgersaantallen
+  bijwerken), logt naar `logs/launchd.log` / `logs/launchd_error.log`.
+- Trigger: `StartCalendarInterval` → Weekday 3 (woensdag), 23:00.
+
+### Bekend probleem: "Operation not permitted" (TCC / macOS-privacy)
+
+Op woensdag 10 juni 2026 23:00 is de taak gestart maar direct mislukt:
+```
+/bin/bash: .../run_pipeline.sh: Operation not permitted
+```
+Oorzaak: het project stond in `~/Desktop/...`. macOS blokkeert
+achtergrondprocessen (launchd) standaard de toegang tot
+`Desktop`/`Documents`/`Downloads` (TCC-privacybeveiliging), tenzij het
+uitvoerende proces (`/bin/bash`) Volledige schijftoegang heeft. `bash`
+toevoegen aan Privacy & Beveiliging → Volledige schijftoegang bleek lastig
+(slepen naar de lijst werkte niet).
+
+**Gekozen oplossing**: het project verplaatsen naar `~/Projects/Marketing
+Agent Social Media` (buiten de TCC-beschermde mappen), zodat `/bin/bash`
+zonder extra rechten bij het script en de Drive/Sheets-bestanden kan. Bij
+deze verplaatsing zijn aangepast:
+- `run_pipeline.sh` (`PROJECT_DIR`)
+- `~/Library/LaunchAgents/nl.topmediagroep.socialmedia.plist` (script-pad +
+  log-paden), gevolgd door `launchctl unload` + `launchctl load`.
+
+Als de pipeline ooit weer in een TCC-beschermde map (Desktop/Documenten/
+Downloads) komt te staan, treedt dit probleem opnieuw op — verplaats dan
+opnieuw, of geef `/bin/bash` Volledige schijftoegang.
