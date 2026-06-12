@@ -159,6 +159,18 @@ def _verify_session_token(token: str):
         return None
 
 
+def _sa_info_json() -> str | None:
+    b64 = os.getenv("GOOGLE_SERVICE_ACCOUNT_B64") or st.secrets.get("GOOGLE_SERVICE_ACCOUNT_B64")
+    if not b64:
+        p1 = st.secrets.get("GOOGLE_SA_B64_1", "")
+        p2 = st.secrets.get("GOOGLE_SA_B64_2", "")
+        b64 = p1 + p2 if p1 and p2 else None
+    if b64:
+        return json.dumps(json.loads(base64.b64decode(b64).decode()))
+    sa = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
+    return sa if sa else None
+
+
 @st.cache_data(ttl=30)
 def load_medewerker_assignments(spreadsheet_id: str, sa_info_json: str) -> dict:
     """Laadt klant-toewijzingen uit de 'Medewerkers'-tab van de Google Sheet."""
@@ -1643,18 +1655,6 @@ def _build_approved_docx(bedrijfsnaam: str, approved_posts: list[dict]) -> bytes
     buf = io.BytesIO()
     doc.save(buf)
     return buf.getvalue()
-
-
-def _sa_info_json() -> str | None:
-    b64 = os.getenv("GOOGLE_SERVICE_ACCOUNT_B64") or st.secrets.get("GOOGLE_SERVICE_ACCOUNT_B64")
-    if not b64:
-        p1 = st.secrets.get("GOOGLE_SA_B64_1", "")
-        p2 = st.secrets.get("GOOGLE_SA_B64_2", "")
-        b64 = p1 + p2 if p1 and p2 else None
-    if b64:
-        return json.dumps(json.loads(base64.b64decode(b64).decode()))
-    sa = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
-    return sa if sa else None
 
 
 def _eff_status(cur_updates, row_idx, post):
