@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+
+	<rss version="2.0">
+		<channel>
+			<title>Sociale stream van Testbedrijf Acme (testdata)</title>
+			<link></link>
+			<description></description>
+			<lastBuildDate>12-6-2026 09:00:00</lastBuildDate>
+
+		<item>
+		    <id><![CDATA[1]]></id>
+		    <title><![CDATA[Nieuwe showroom geopend]]></title>
+		    <intro><![CDATA[intro]]></intro>
+		    <hashtags><![CDATA[#showroom #nieuw]]></hashtags>
+		    <description><![CDATA[Vandaag openden we onze vernieuwde showroom! 🎉
+
+Kom langs en bekijk ons volledige assortiment in het echt. Ons team staat klaar om je vrijblijvend te adviseren.
+
+🌐 www.testbedrijf-acme.nl]]></description>
+		    <weblog><![CDATA[tekst]]></weblog>
+
+		    	<picture>https://example.com/test-images/showroom.jpg</picture>
+		    	<enclosure type="image/jpeg" url="https://example.com/test-images/showroom.jpg" />
+
+		    <link><![CDATA[https://www.testbedrijf-acme.nl/showroom]]></link>
+		    <pubDate>12-6-2026 09:00:00</pubDate>
+		</item>
+		<item>
+		    <id><![CDATA[2]]></id>
+		    <title><![CDATA[Tip van de week]]></title>
+		    <intro><![CDATA[intro]]></intro>
+		    <hashtags><![CDATA[#tips #onderhoud]]></hashtags>
+		    <description><![CDATA[Wist je dat regelmatig onderhoud de levensduur van je apparatuur aanzienlijk verlengt? ⚙️
+
+Onze monteurs delen graag hun beste tips — vraag ernaar bij je volgende bezoek.
+
+🤝 Samen werken aan duurzaam gebruik.]]></description>
+		    <weblog><![CDATA[]]></weblog>
+
+		    	<picture>https://example.com/test-images/onderhoud.jpg</picture>
+		    	<enclosure type="image/jpeg" url="https://example.com/test-images/onderhoud.jpg" />
+
+		    <link><![CDATA[https://www.testbedrijf-acme.nl/tips]]></link>
+		    <pubDate>11-6-2026 14:30:00</pubDate>
+		</item>
+		<item>
+		    <id><![CDATA[3]]></id>
+		    <title><![CDATA[Klant in de spotlight]]></title>
+		    <intro><![CDATA[intro]]></intro>
+		    <hashtags><![CDATA[#klantverhaal #succes]]></hashtags>
+		    <description><![CDATA[Deze week zetten we een trouwe klant in het zonnetje! ☀️
+
+Bedankt voor het vertrouwen en de fijne samenwerking de afgelopen jaren. Op naar nog veel meer mooie projecten samen.
+
+🌐 www.testbedrijf-acme.nl/cases]]></description>
+		    <weblog><![CDATA[]]></weblog>
+
+		    	<picture>https://example.com/test-images/klant.jpg</picture>
+		    	<enclosure type="image/jpeg" url="https://example.com/test-images/klant.jpg" />
+
+		    <link><![CDATA[https://www.testbedrijf-acme.nl/cases/klant-spotlight]]></link>
+		    <pubDate>10-6-2026 11:15:00</pubDate>
+		</item>
+		<item>
+		    <id><![CDATA[4]]></id>
+		    <title><![CDATA[Achter de schermen]]></title>
+		    <intro><![CDATA[intro]]></intro>
+		    <hashtags><![CDATA[#behindthescenes #team]]></hashtags>
+		    <description><![CDATA[Een kijkje achter de schermen bij Testbedrijf Acme! 👀
+
+Ons team werkt hard aan de voorbereidingen voor een groot nieuw project. Volg ons om op de hoogte te blijven van de voortgang.
+
+🌐 www.testbedrijf-acme.nl]]></description>
+		    <weblog><![CDATA[]]></weblog>
+
+		    	<picture>https://example.com/test-images/team.jpg</picture>
+		    	<enclosure type="image/jpeg" url="https://example.com/test-images/team.jpg" />
+
+		    <link><![CDATA[https://www.testbedrijf-acme.nl/over-ons]]></link>
+		    <pubDate>9-6-2026 16:00:00</pubDate>
+		</item>
+		<item>
+		    <id><![CDATA[5]]></id>
+		    <title><![CDATA[Vacature: monteur gezocht]]></title>
+		    <intro><![CDATA[intro]]></intro>
+		    <hashtags><![CDATA[#vacature #werken]]></hashtags>
+		    <description><![CDATA[We zoeken versterking! 🔧
+
+Ben jij een gedreven monteur en wil je werken bij een groeiend bedrijf met korte lijnen en veel ruimte voor eigen inbreng? Solliciteer vandaag nog.
+
+🌐 www.testbedrijf-acme.nl/vacatures]]></description>
+		    <weblog><![CDATA[]]></weblog>
+
+		    	<picture>https://example.com/test-images/vacature.jpg</picture>
+		    	<enclosure type="image/jpeg" url="https://example.com/test-images/vacature.jpg" />
+
+		    <link><![CDATA[https://www.testbedrijf-acme.nl/vacatures/monteur]]></link>
+		    <pubDate>8-6-2026 08:45:00</pubDate>
+		</item>
+		</channel>
+	</rss>
